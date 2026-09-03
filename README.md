@@ -89,7 +89,7 @@ screen has something real in it. All demo accounts share one password:
 |---|---|---|
 | Artist (Signature plan) | `mariel@polishedpro.test` | `PolishedDemo!2026` |
 | Artist (Studio plan) | `jonas@polishedpro.test` | `PolishedDemo!2026` |
-| Artist (free Starter plan) | `paolo@polishedpro.test` | `PolishedDemo!2026` |
+| Artist (trial, no plan yet) | `paolo@polishedpro.test` | `PolishedDemo!2026` |
 | Client | `bea@example.test` | `PolishedDemo!2026` |
 
 **Delete these before going live.** There is no admin among them — create yours with
@@ -128,21 +128,45 @@ Even a badly configured server cannot serve them.
 
 ## Artist subscriptions
 
-Three tiers, seeded and editable from **Admin → Plans**:
+Subscription only — there is no free tier. Every new artist starts a **14-day trial**
+granting the full Studio feature set, then subscribes or goes quiet. Plans are seeded
+and editable from **Admin → Plans**:
 
-| | Starter | Studio | Signature |
+| | Trial | Studio | Signature |
 |---|---|---|---|
-| Price | Free | ₱349/mo | ₱749/mo |
-| Active services | 3 | 15 | Unlimited |
-| Portfolio photos | 6 | 30 | Unlimited |
+| Price | Free, 14 days | ₱349/mo | ₱749/mo |
+| Active services | 15 | 15 | Unlimited |
+| Portfolio photos | 30 | 30 | Unlimited |
 | Search placement | Standard | Priority | Top |
-| Analytics | — | Yes | Yes |
-| Instant booking | — | Yes | Yes |
+| Analytics | Yes | Yes | Yes |
+| Instant booking | Yes | Yes | Yes |
 | Commission on bookings | **0%** | **0%** | **0%** |
+
+Trial length and which plan it mirrors are set in `config/app.php` under
+`subscription.trial_days` / `subscription.trial_plan_code`.
+
+### What "lapsed" means
+
+`Subscription::accessFor()` is the single question the app asks: is this artist
+`trialing`, `subscribed`, or `locked`? A locked artist:
+
+- **disappears from search and their public profile 404s** — enforced in
+  `Artist::HAS_ACCESS`, which is part of `PUBLIC_WHERE`, so every public query
+  inherits it
+- **cannot take new bookings** — `BookingService` resolves the artist through that
+  same public filter, so there is no second gate to keep in sync
+- **keeps their dashboard**, their data, and any appointments already booked
+
+Nothing is deleted, and subscribing again restores the profile immediately. The
+dashboard shows a banner in all three states (`partials/subscription-banner.php`).
 
 Limits are enforced in `Subscription::serviceAllowance()` and checked on every write
 path — hiding a button is not a limit. Only *active* services count, so an artist at
 their cap can still draft a service and choose which one is published.
+
+The old free `starter` plan row is retained but inactive, so historical subscriptions
+keep a valid foreign key. `Plan::locked()` — all limits zero — replaced `Plan::free()`
+as the fallback when nobody is paying.
 
 Search placement affects the default "Recommended" sort only. Every other sort —
 highest rated, most reviewed, price, newest — ignores the plan entirely.

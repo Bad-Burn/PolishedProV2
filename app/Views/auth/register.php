@@ -14,7 +14,7 @@ $role = in_array($role ?? 'customer', ['customer', 'artist'], true) ? $role : 'c
     <div class="auth__form">
         <div class="auth__inner">
             <h1 class="display-2 mb-2">Create your account</h1>
-            <p class="muted mb-8">Free to join, whichever side of the chair you are on.</p>
+            <p class="muted mb-8">Free for clients. Artists get a 14-day trial, no card needed.</p>
 
             <?php if (!$openFor): ?>
                 <div class="alert alert--warning mb-6">
@@ -149,7 +149,7 @@ $role = in_array($role ?? 'customer', ['customer', 'artist'], true) ? $role : 'c
             No commission on your bookings. Your clients stay yours.
         </blockquote>
         <ul class="plan__features">
-            <li><?= icon('check') ?><span>Three services free, forever</span></li>
+            <li><?= icon('check') ?><span>14 days free, no card needed</span></li>
             <li><?= icon('check') ?><span>Real calendar, no double bookings</span></li>
             <li><?= icon('check') ?><span>Reviews only from real appointments</span></li>
         </ul>

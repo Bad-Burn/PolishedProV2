@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Core\Config;
 use App\Core\Database;
 
 /**
@@ -27,6 +28,7 @@ final class Subscription
                INNER JOIN plans p ON p.id = s.plan_id
               WHERE s.user_id = :u
                 AND s.status IN ("active", "past_due")
+                AND p.price_monthly > 0
                 AND (s.current_period_end IS NULL OR s.current_period_end > NOW())
               ORDER BY p.featured_weight DESC, s.id DESC
               LIMIT 1',
@@ -34,9 +36,60 @@ final class Subscription
         );
     }
 
+    public static function trialDays(): int
+    {
+        return max(0, (int) Config::get('app.subscription.trial_days', 14));
+    }
+
+    /**
+     * Where this artist stands: inside their trial, paying, or locked out.
+     *
+     * This is the one question the rest of the app should ask. `planFor()`
+     * answers "what may they do"; this answers "may they trade at all".
+     *
+     * @return array{state:string, trial_ends_at:?string, days_left:int, is_live:bool}
+     */
+    public static function accessFor(int $userId): array
+    {
+        if (self::activeFor($userId) !== null) {
+            return ['state' => 'subscribed', 'trial_ends_at' => null, 'days_left' => 0, 'is_live' => true];
+        }
+
+        $trialEnds = Database::scalar(
+            'SELECT trial_ends_at FROM users WHERE id = :u AND role = "artist" LIMIT 1',
+            ['u' => $userId]
+        );
+
+        if ($trialEnds === null || $trialEnds === '') {
+            return ['state' => 'locked', 'trial_ends_at' => null, 'days_left' => 0, 'is_live' => false];
+        }
+
+        $endsAt = strtotime((string) $trialEnds);
+        if ($endsAt === false || $endsAt <= time()) {
+            return ['state' => 'locked', 'trial_ends_at' => (string) $trialEnds, 'days_left' => 0, 'is_live' => false];
+        }
+
+        return [
+            'state'         => 'trialing',
+            'trial_ends_at' => (string) $trialEnds,
+            // Part of a day still counts as a day to the person reading it.
+            'days_left'     => (int) max(1, ceil(($endsAt - time()) / 86400)),
+            'is_live'       => true,
+        ];
+    }
+
+    /** Can this artist appear publicly and take new bookings? */
+    public static function isLive(int $userId): bool
+    {
+        return self::accessFor($userId)['is_live'];
+    }
+
     /**
      * The plan governing this artist right now — always returns something, so
      * callers never have to null-check before reading a limit.
+     *
+     * A trial grants a real plan's entitlements; a lapsed artist gets
+     * Plan::locked(), whose limits are all zero.
      *
      * @return array<string, mixed>
      */
@@ -45,12 +98,17 @@ final class Subscription
         $subscription = self::activeFor($userId);
 
         if ($subscription === null) {
-            $plan = Plan::free();
-            $plan['subscription_status'] = 'none';
+            $access = self::accessFor($userId);
+
+            $plan = $access['state'] === 'trialing' ? Plan::trial() : Plan::locked();
+            $plan['subscription_status'] = $access['state'] === 'trialing' ? 'trialing' : 'none';
+            $plan['trial_ends_at']       = $access['trial_ends_at'];
+            $plan['trial_days_left']     = $access['days_left'];
+
             return $plan;
         }
 
-        $plan = Plan::find((int) $subscription['plan_id']) ?? Plan::free();
+        $plan = Plan::find((int) $subscription['plan_id']) ?? Plan::locked();
         $plan['subscription_id']     = (int) $subscription['id'];
         $plan['subscription_status'] = (string) $subscription['status'];
         $plan['billing_cycle']       = (string) $subscription['billing_cycle'];
@@ -82,14 +140,14 @@ final class Subscription
             'allowed' => $allowed,
             'used'    => $used,
             'limit'   => $limit,
-            'message' => $allowed
-                ? null
+            'message' => $allowed ? null : ($limit === 0
+                ? self::lockedMessage()
                 : sprintf(
                     'Your %s plan covers %d active service%s. Deactivate one, or upgrade for more.',
                     $plan['name'],
                     $limit,
                     $limit === 1 ? '' : 's'
-                ),
+                )),
         ];
     }
 
@@ -110,10 +168,17 @@ final class Subscription
             'allowed' => $allowed,
             'used'    => $used,
             'limit'   => $limit,
-            'message' => $allowed
-                ? null
-                : sprintf('Your %s plan includes %d portfolio photos. Remove one, or upgrade for more.', $plan['name'], $limit),
+            'message' => $allowed ? null : ($limit === 0
+                ? self::lockedMessage()
+                : sprintf('Your %s plan includes %d portfolio photos. Remove one, or upgrade for more.', $plan['name'], $limit)),
         ];
+    }
+
+    /** One wording for every "your trial ended" dead end. */
+    private static function lockedMessage(): string
+    {
+        return 'Your trial has ended, so your profile is hidden and you cannot take new bookings. '
+             . 'Choose a plan to go live again — nothing you have added has been deleted.';
     }
 
     public static function hasAnalytics(int $artistId): bool

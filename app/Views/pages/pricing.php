@@ -17,10 +17,10 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
     <div class="container">
         <div class="text-center mb-10">
             <p class="eyebrow mb-3">For artists</p>
-            <h1 class="display-1 mb-4">Start free.<br>Pay when it pays you back.</h1>
+            <h1 class="display-1 mb-4">Try it free.<br>Then pay when it pays you back.</h1>
             <p class="lede" style="margin-inline:auto;">
                 We never take a commission on your bookings. The subscription is the only thing
-                you ever pay us, and the free tier is a real product, not a trial.
+                you ever pay us. Every artist starts with a 14-day trial on the full Studio plan — no card needed to begin.
             </p>
         </div>
 
@@ -49,7 +49,7 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
                 <a class="btn btn--primary btn--lg" href="<?= e(url('/register', ['as' => 'artist'])) ?>">
                     Create an artist account
                 </a>
-                <p class="tiny muted mt-3">No card needed to start on Starter.</p>
+                <p class="tiny muted mt-3">Every plan starts with a 14-day free trial. No card needed to begin.</p>
             </div>
         <?php endif; ?>
     </div>
@@ -64,16 +64,16 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
             <div>
                 <h3 class="heading-sm mb-2">More services you can publish at once</h3>
                 <p class="muted">
-                    Starter covers three live services. If your menu is longer than that — a colourist
-                    with six variations of balayage, say — you need the room. Services beyond your limit
-                    are hidden, never deleted, so downgrading is safe.
+                    Studio covers fifteen live services. If your menu is longer than that — a colourist
+                    with six variations of balayage, plus treatments and consultations — Signature lifts
+                    the cap entirely. Services beyond your limit are hidden, never deleted.
                 </p>
             </div>
 
             <div>
                 <h3 class="heading-sm mb-2">Higher placement on the Recommended sort</h3>
                 <p class="muted">
-                    Paid artists rank above free ones when someone browses with the default sort.
+                    Artists on the higher tier rank above the rest when someone browses with the default sort.
                     Rating and review count still break ties, and every other sort — highest rated,
                     price, newest — ignores your plan completely. We are not going to pretend a paid
                     listing is the best match when it is not.
@@ -92,7 +92,7 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
                 <h3 class="heading-sm mb-2">What it never changes</h3>
                 <p class="muted">
                     Your reviews, your rating, your client list, and the commission we take on your
-                    bookings — which is zero on every plan, including the free one.
+                    bookings — which is zero, on every plan, always.
                 </p>
             </div>
         </div>
@@ -108,9 +108,10 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
             <div>
                 <h3 class="heading-sm mb-2">What happens if I cancel?</h3>
                 <p class="muted">
-                    You keep everything until the end of the period you already paid for. After that you
-                    return to Starter and any services over the free limit are hidden from your profile.
-                    Nothing is deleted, and republishing is one click if you upgrade again.
+                    You keep everything until the end of the period you already paid for. After that your
+                    profile comes down from search and you stop taking new bookings — appointments already
+                    in your calendar still stand. Nothing is deleted, and subscribing again puts your
+                    profile straight back where it was.
                 </p>
             </div>
 

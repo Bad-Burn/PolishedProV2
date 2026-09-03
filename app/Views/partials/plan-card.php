@@ -47,7 +47,7 @@ $isRecommended = ($plan['code'] ?? '') === 'studio' && !$isCurrent;
     <?php if (!$isFree && $cycle === 'yearly' && $saving > 0): ?>
         <p class="tiny text-positive" style="margin-top:-.75rem;">Save <?= (int) $saving ?>% versus paying monthly</p>
     <?php elseif ($isFree): ?>
-        <p class="tiny muted" style="margin-top:-.75rem;">No card required, no time limit</p>
+        <p class="tiny muted" style="margin-top:-.75rem;">Retired plan — no longer available</p>
     <?php endif; ?>
 
     <ul class="plan__features">
@@ -60,7 +60,7 @@ $isRecommended = ($plan['code'] ?? '') === 'studio' && !$isCurrent;
         <?php if ($isCurrent): ?>
             <button class="btn btn--secondary btn--block" type="button" disabled>Current plan</button>
         <?php elseif ($isFree): ?>
-            <p class="tiny muted text-center">Every artist starts here.</p>
+            <p class="tiny muted text-center">No longer offered.</p>
         <?php elseif (!$paypalReady): ?>
             <button class="btn btn--secondary btn--block" type="button" disabled>Payments not configured</button>
         <?php else: ?>

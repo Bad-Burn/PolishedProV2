@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Core\Database;
 use App\Core\Hash;
+use App\Models\Subscription;
 
 final class User
 {
@@ -45,8 +46,8 @@ final class User
         $role = in_array($data['role'], ['customer', 'artist', 'admin'], true) ? $data['role'] : 'customer';
 
         return Database::insert(
-            'INSERT INTO users (role, full_name, email, phone, password_hash, status, approved_at)
-             VALUES (:role, :name, :email, :phone, :hash, :status, :approved)',
+            'INSERT INTO users (role, full_name, email, phone, password_hash, status, approved_at, trial_ends_at)
+             VALUES (:role, :name, :email, :phone, :hash, :status, :approved, :trial)',
             [
                 'role'   => $role,
                 'name'   => $data['full_name'],
@@ -56,6 +57,11 @@ final class User
                 'status' => 'active',
                 // Customers are live immediately; artists wait for admin approval.
                 'approved' => $role === 'artist' ? null : date('Y-m-d H:i:s'),
+                // Artists start a trial the moment they sign up; clients never
+                // have one, because nothing on the client side is paid for.
+                'trial' => $role === 'artist'
+                    ? date('Y-m-d H:i:s', strtotime('+' . Subscription::trialDays() . ' days'))
+                    : null,
             ]
         );
     }
@@ -63,7 +69,7 @@ final class User
     /** @param array<string, mixed> $fields */
     public static function update(int $id, array $fields): bool
     {
-        $allowed = ['full_name', 'email', 'phone', 'avatar_path', 'status', 'role', 'approved_at', 'email_verified_at'];
+        $allowed = ['full_name', 'email', 'phone', 'avatar_path', 'status', 'role', 'approved_at', 'email_verified_at', 'trial_ends_at'];
         $set     = [];
         $bind    = ['id' => $id];
 

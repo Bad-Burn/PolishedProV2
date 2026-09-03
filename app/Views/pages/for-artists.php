@@ -22,14 +22,14 @@ layout('app');
 
                 <div class="hero__actions">
                     <a class="btn btn--primary btn--lg" href="<?= e(url('/register', ['as' => 'artist'])) ?>">
-                        Start listing free
+                        Start your free trial
                     </a>
                     <a class="btn btn--secondary btn--lg" href="<?= e(url('/pricing')) ?>">See the plans</a>
                 </div>
 
                 <dl class="hero__proof">
                     <div><dt>Commission on bookings</dt><dd>0%</dd></div>
-                    <div><dt>Free services</dt><dd>3</dd></div>
+                    <div><dt>Free trial</dt><dd>14 days</dd></div>
                     <div><dt>Contract length</dt><dd>None</dd></div>
                 </dl>
             </div>
@@ -124,7 +124,7 @@ layout('app');
                 <h3 class="heading-sm mb-3">A portfolio that loads fast</h3>
                 <p class="muted">
                     Upload your work and we resize it, strip the location data out of the file, and
-                    serve it properly. Six photos free, more on a paid plan.
+                    serve it properly. Thirty photos on Studio, unlimited on Signature.
                 </p>
             </article>
         </div>
@@ -143,7 +143,7 @@ layout('app');
         <div class="grid grid--3 steps">
             <div class="step">
                 <h3 class="heading-sm">Create your account</h3>
-                <p>Name, email, city. Two minutes, no card.</p>
+                <p>Name, email, city. Two minutes, and no card to start your trial.</p>
             </div>
             <div class="step">
                 <h3 class="heading-sm">Add services and hours</h3>

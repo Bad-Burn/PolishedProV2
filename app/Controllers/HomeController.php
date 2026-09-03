@@ -36,7 +36,7 @@ final class HomeController extends Controller
     {
         $this->view('pages/for-artists', [
             'title' => 'For artists',
-            'metaDescription' => 'List your services, manage your calendar and get booked. Free to start, with paid plans for more listings and better placement.',
+            'metaDescription' => 'List your services, manage your calendar and get booked. Start with a 14-day free trial. Plans from PHP 349 a month, and we never take a commission.',
             'plans' => Plan::all(),
         ]);
     }
@@ -47,7 +47,7 @@ final class HomeController extends Controller
 
         $this->view('pages/pricing', [
             'title' => 'Plans and pricing',
-            'metaDescription' => 'Simple plans for artists on PolishedPro. Start free, upgrade when your calendar fills up.',
+            'metaDescription' => 'Simple plans for artists on PolishedPro. Try it free for 14 days, then pick the plan that fits your calendar.',
             'plans' => Plan::all(),
             'cycle' => $cycle,
         ]);

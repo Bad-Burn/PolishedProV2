@@ -167,9 +167,23 @@ single indexed comparison.
 
 ## Subscriptions and entitlements
 
-`Subscription::planFor($artistId)` is the single source of truth for what an artist may
-do. It always returns a plan — falling back to the free tier — so callers never
-null-check before reading a limit.
+There is no free tier. An artist is in one of three states, and
+`Subscription::accessFor($artistId)` is the single question the app asks:
+
+| State | Meaning |
+|---|---|
+| `trialing` | Inside the 14-day window opened at registration |
+| `subscribed` | Holds a live subscription to a plan that costs money |
+| `locked` | Neither — hidden from clients, cannot take new bookings |
+
+`Subscription::planFor($artistId)` answers the separate question of *what they may do*.
+It always returns a plan — the trial plan during a trial, `Plan::locked()` (every limit
+zero) once locked — so callers never null-check before reading a limit.
+
+The two gates that make `locked` mean something both hang off one constant,
+`Artist::HAS_ACCESS`, which is folded into `PUBLIC_WHERE`. Every public query inherits
+it, and because `BookingService` resolves the artist through that same filter, blocking
+bookings needs no second check to keep in sync.
 
 Controllers ask, rather than reading limits themselves:
 
@@ -184,8 +198,8 @@ One place to audit when the rules change, and the check sits on the **write path
 hiding a button in a template is not a limit.
 
 Only *active* services count against the cap, so an artist at their limit can still
-draft a service and choose which one is published. Downgrading hides services beyond
-the new limit rather than deleting them; upgrading brings them straight back.
+draft a service and choose which one is published. Lapsing hides the whole profile from
+search rather than deleting anything; subscribing again brings it straight back.
 
 ### Search placement
 

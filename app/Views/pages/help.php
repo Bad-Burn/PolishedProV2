@@ -95,7 +95,7 @@ layout('app');
             <div>
                 <h3 class="heading-sm mb-2">Do you take commission?</h3>
                 <p class="muted">
-                    No. Not on the free plan, not on the paid ones.
+                    No. Not on the trial, not on any plan.
                 </p>
             </div>
         </div>

@@ -187,18 +187,18 @@ $swatches = [
                 <p class="eyebrow mb-3">For professionals</p>
                 <h2 class="display-2 mb-4">Your calendar, your prices, your clients.</h2>
                 <p class="lede mb-6">
-                    List up to three services free, forever. Set your working hours once and let people
-                    book around them. Upgrade only when you need more listings or better placement.
+                    Try every feature free for 14 days. Set your working hours once and let people book
+                    around them. Pick a plan when you are ready — we never take a cut of your bookings.
                 </p>
                 <div class="row">
-                    <a class="btn btn--primary btn--lg" href="<?= e(url('/register', ['as' => 'artist'])) ?>">Start listing free</a>
+                    <a class="btn btn--primary btn--lg" href="<?= e(url('/register', ['as' => 'artist'])) ?>">Start your free trial</a>
                     <a class="btn btn--ghost" href="<?= e(url('/pricing')) ?>">Compare plans</a>
                 </div>
             </div>
 
             <ul class="plan__features" style="margin:0;">
                 <li><?= icon('check') ?><span>No commission on your bookings</span></li>
-                <li><?= icon('check') ?><span>Free plan with three active services</span></li>
+                <li><?= icon('check') ?><span>14-day free trial, no card to start</span></li>
                 <li><?= icon('check') ?><span>Cancel a paid plan any time</span></li>
                 <li><?= icon('check') ?><span>Your client list stays yours</span></li>
             </ul>

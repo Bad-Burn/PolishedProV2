@@ -96,8 +96,10 @@ $uri = $_SERVER['REQUEST_URI'] ?? '';
         <p class="plan-card__meta">Ends <?= e(date_label($plan['current_period_end'] ?? null, 'M j')) ?></p>
     <?php elseif (!empty($plan['current_period_end'])): ?>
         <p class="plan-card__meta">Renews <?= e(date_label($plan['current_period_end'], 'M j')) ?></p>
+    <?php elseif (($plan['subscription_status'] ?? 'none') === 'trialing'): ?>
+        <p class="plan-card__meta">Trial &middot; <?= e(plural((int) ($plan['trial_days_left'] ?? 0), 'day')) ?> left</p>
     <?php else: ?>
-        <p class="plan-card__meta">Free forever</p>
+        <p class="plan-card__meta text-critical">No active plan</p>
     <?php endif; ?>
 
     <div class="meter">

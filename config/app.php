@@ -43,4 +43,19 @@ return [
     'pagination' => [
         'per_page' => 12,
     ],
+
+    /**
+     * Artist subscriptions.
+     *
+     * There is no free tier. A new artist gets a trial long enough to build a
+     * profile and take their first bookings; after that they subscribe or go
+     * quiet. `trial_plan_code` decides what the trial actually grants — point
+     * it at the plan you want people to experience, not the cheapest one.
+     */
+    'subscription' => [
+        'trial_days'      => (int) Config::env('TRIAL_DAYS', 14),
+        'trial_plan_code' => (string) Config::env('TRIAL_PLAN_CODE', 'studio'),
+        // Warn the artist this many days out from the end of their trial.
+        'trial_warn_days' => 3,
+    ],
 ];

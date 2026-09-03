@@ -34,7 +34,7 @@ end_section();
             <p class="stat__label"><?= icon('sparkle') ?> <?= e($row['name']) ?></p>
             <p class="stat__value"><?= (int) $row['subscribers'] ?></p>
             <p class="stat__delta muted">
-                <?= (float) $row['price_monthly'] > 0 ? e(money((float) $row['price_monthly'])) . ' / month' : 'Free tier' ?>
+                <?= (float) $row['price_monthly'] > 0 ? e(money((float) $row['price_monthly'])) . ' / month' : 'Retired free tier' ?>
             </p>
         </div>
     <?php endforeach; ?>

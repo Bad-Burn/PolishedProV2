@@ -42,6 +42,11 @@ use App\Core\View;
     </aside>
 
     <div class="dash__main" id="main">
+        <?= view_partial('subscription-banner', [
+            'access'      => View::shared('subscriptionAccess'),
+            'currentPlan' => View::shared('currentPlan'),
+        ]) ?>
+
         <?= $content ?>
     </div>
 </div>

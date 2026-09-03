@@ -67,7 +67,7 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
             <p class="eyebrow mb-2">Current plan</p>
             <h2 class="display-2" style="font-size:2rem;">
                 <?= e($current['name']) ?>
-                <?php if (!empty($current['badge'])): ?>
+                <?php if (!empty($current['badge']) && ($current['subscription_status'] ?? '') !== 'trialing'): ?>
                     <span class="plan-badge" style="vertical-align:middle;"><?= e($current['badge']) ?></span>
                 <?php endif; ?>
             </h2>
@@ -77,8 +77,11 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
             <?php if ($isPaid && !empty($current['current_period_end'])): ?>
                 <p class="small muted"><?= $endingSoon ? 'Access ends' : 'Renews' ?></p>
                 <p class="strong"><?= e(date_label($current['current_period_end'], 'F j, Y')) ?></p>
+            <?php elseif (($current['subscription_status'] ?? '') === 'trialing'): ?>
+                <p class="small muted">Trial ends</p>
+                <p class="strong"><?= e(date_label($current['trial_ends_at'] ?? null, 'F j, Y')) ?></p>
             <?php else: ?>
-                <span class="badge badge--positive badge--dot">Free forever</span>
+                <span class="badge badge--caution badge--dot">No active plan</span>
             <?php endif; ?>
         </div>
     </div>
@@ -136,7 +139,7 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
                         <p>
                             You keep everything until
                             <?= e(date_label($current['current_period_end'] ?? null, 'F j')) ?>.
-                            After that you go back to Starter, and services beyond the free limit are hidden — not deleted.
+                            After that your profile comes down and you stop taking new bookings — nothing is deleted, and subscribing again puts you straight back.
                         </p>
                         <form method="post" action="<?= e(url('/artist/subscription/cancel')) ?>">
                             <?= csrf_field() ?>

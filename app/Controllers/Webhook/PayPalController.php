@@ -118,7 +118,7 @@ final class PayPalController extends Controller
                 $this->notify(
                     $userId,
                     'Your plan was cancelled',
-                    'You are back on the free Starter plan. Services beyond the free limit are now hidden.'
+                    'Your subscription has ended. Your profile is hidden from search until you subscribe again — nothing has been deleted.'
                 );
                 break;
 

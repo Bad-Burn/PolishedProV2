@@ -47,8 +47,34 @@ final class Artist
           LEFT JOIN plans p ON p.id = sub.plan_id
     ';
 
-    /** Only approved, active artists are ever shown to the public. */
-    private const PUBLIC_WHERE = ' u.role = "artist" AND u.status = "active" AND u.approved_at IS NOT NULL ';
+    /**
+     * Only approved, active, *paying* artists are ever shown to the public.
+     *
+     * The subscription test is a self-contained EXISTS rather than a join
+     * condition, because this fragment is also used by the COUNT query in
+     * search(), which does not join the subscription tables at all. Referencing
+     * only `u` keeps it valid everywhere it is pasted.
+     *
+     * "Paying" means one of two things: inside the trial window, or holding a
+     * subscription to a plan that actually costs money. The price test matters
+     * — the retired ₱0 Starter plan still has rows pointing at it.
+     */
+    private const HAS_ACCESS = '
+        (
+            u.trial_ends_at > NOW()
+            OR EXISTS (
+                SELECT 1 FROM subscriptions sx
+                 INNER JOIN plans px ON px.id = sx.plan_id
+                 WHERE sx.user_id = u.id
+                   AND sx.status IN ("active", "past_due")
+                   AND px.price_monthly > 0
+                   AND (sx.current_period_end IS NULL OR sx.current_period_end > NOW())
+            )
+        )
+    ';
+
+    private const PUBLIC_WHERE = ' u.role = "artist" AND u.status = "active" AND u.approved_at IS NOT NULL AND '
+        . self::HAS_ACCESS . ' ';
 
     /** @return array<string, mixed>|null */
     public static function findBySlug(string $slug): ?array

@@ -107,9 +107,13 @@ final class DemoSeeder
     {
         $plans = [
             [
+                // Retired: replaced by the free trial. Seeded inactive so old
+                // subscription rows keep a valid foreign key, and so the plan
+                // chooser never shows it.
                 'code'    => 'starter',
-                'name'    => 'Starter',
-                'tagline' => 'Everything you need to take your first bookings.',
+                'name'    => 'Starter (retired)',
+                'tagline' => 'Replaced by the free trial. Kept for historical subscriptions.',
+                'active'  => 0,
                 'monthly' => 0.00,
                 'yearly'  => 0.00,
                 'services'  => 3,
@@ -141,7 +145,7 @@ final class DemoSeeder
                 'highlights' => [
                     'Up to 15 active services',
                     '30 portfolio photos',
-                    'Priority placement above Starter artists',
+                    'Priority placement in search results',
                     'Studio badge on your profile',
                     'Performance analytics dashboard',
                     'Instant booking (skip manual approval)',
@@ -179,14 +183,15 @@ final class DemoSeeder
                  VALUES
                     (:code, :name, :tagline, :monthly, :yearly, :currency,
                      :services, :portfolio, :weight, :badge,
-                     :analytics, :instant, :highlights, 1, :sort)
+                     :analytics, :instant, :highlights, :active, :sort)
                  ON DUPLICATE KEY UPDATE
                     name = VALUES(name), tagline = VALUES(tagline),
                     price_monthly = VALUES(price_monthly), price_yearly = VALUES(price_yearly),
                     max_services = VALUES(max_services), max_portfolio_items = VALUES(max_portfolio_items),
                     featured_weight = VALUES(featured_weight), badge = VALUES(badge),
                     has_analytics = VALUES(has_analytics), has_instant_book = VALUES(has_instant_book),
-                    highlights = VALUES(highlights), sort_order = VALUES(sort_order)',
+                    highlights = VALUES(highlights), sort_order = VALUES(sort_order),
+                    is_active = VALUES(is_active)',
                 [
                     'code'      => $plan['code'],
                     'name'      => $plan['name'],
@@ -201,6 +206,8 @@ final class DemoSeeder
                     'analytics' => $plan['analytics'],
                     'instant'   => $plan['instant'],
                     'highlights'=> json_encode($plan['highlights'], JSON_UNESCAPED_UNICODE),
+                    // Retired plans seed as inactive so they never reach the chooser.
+                    'active'    => $plan['active'] ?? 1,
                     'sort'      => $i * 10,
                 ]
             );
@@ -397,15 +404,26 @@ final class DemoSeeder
         return $ids;
     }
 
+    /**
+     * Give the artist a paid subscription, or — for the ones the fixtures mark
+     * as `starter` — a trial, since there is no free tier to put them on.
+     */
     private function attachSubscription(int $userId, string $planCode): void
     {
+        if ($planCode === 'starter') {
+            Database::affectingStatement(
+                'UPDATE users SET trial_ends_at = DATE_ADD(NOW(), INTERVAL :d DAY) WHERE id = :u',
+                ['d' => \App\Models\Subscription::trialDays(), 'u' => $userId]
+            );
+            return;
+        }
+
         $planId = $this->planIds[$planCode] ?? null;
         if ($planId === null) {
             return;
         }
 
-        // Free tier is represented by a row too, so plan lookups never special-case null.
-        $isPaid = $planCode !== 'starter';
+        $isPaid = true;
 
         $startedAt = date('Y-m-d H:i:s', strtotime('-' . random_int(3, 25) . ' days'));
 

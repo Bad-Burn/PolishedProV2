@@ -24,7 +24,7 @@ end_section();
         <?= icon('chart') ?>
     </span>
 
-    <h2 class="heading-lg mb-3">Analytics comes with a paid plan</h2>
+    <h2 class="heading-lg mb-3">Analytics comes with the Signature plan</h2>
 
     <p class="muted mb-6">
         You are on the <strong><?= e($plan['name']) ?></strong> plan. Upgrading unlocks a six-month

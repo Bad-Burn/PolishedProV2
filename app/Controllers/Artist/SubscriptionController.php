@@ -65,7 +65,7 @@ final class SubscriptionController extends Controller
         }
 
         if (!Plan::isPaid($plan)) {
-            $this->failure('The Starter plan is free — there is nothing to pay.', '/artist/subscription');
+            $this->failure('That plan is not available for checkout.', '/artist/subscription');
         }
 
         $currentPlan = Subscription::planFor($artistId);

@@ -36,24 +36,46 @@ final class Plan
         return $row === null ? null : self::hydrate($row);
     }
 
-    /** The plan every artist falls back to when they have no active subscription. */
-    public static function free(): array
+    /**
+     * What an artist gets when their trial has run out and they have not
+     * subscribed: nothing.
+     *
+     * This is a synthetic plan rather than null so the seventeen callers of
+     * Subscription::planFor() can keep reading limits without null-checking —
+     * the same contract as before, with the numbers set to zero instead of to
+     * a free allowance. Nothing in the database matches it.
+     */
+    public static function locked(): array
     {
-        return self::findByCode('starter') ?? [
+        return [
             'id'                  => 0,
-            'code'                => 'starter',
-            'name'                => 'Starter',
-            'tagline'             => '',
+            'code'                => 'locked',
+            'name'                => 'No active plan',
+            'tagline'             => 'Subscribe to put your profile back in front of clients.',
             'price_monthly'       => 0.0,
             'price_yearly'        => 0.0,
-            'max_services'        => 3,
-            'max_portfolio_items' => 6,
+            'max_services'        => 0,
+            'max_portfolio_items' => 0,
             'featured_weight'     => 0,
             'badge'               => null,
             'has_analytics'       => 0,
             'has_instant_book'    => 0,
             'highlights'          => [],
         ];
+    }
+
+    /** The plan a trial grants. Falls back to the cheapest live plan. */
+    public static function trial(): array
+    {
+        $code = (string) \App\Core\Config::get('app.subscription.trial_plan_code', 'studio');
+        $plan = self::findByCode($code);
+
+        if ($plan === null || (int) ($plan['is_active'] ?? 0) !== 1) {
+            $active = self::all(true);
+            $plan   = $active[0] ?? self::locked();
+        }
+
+        return $plan;
     }
 
     public static function isPaid(array $plan): bool

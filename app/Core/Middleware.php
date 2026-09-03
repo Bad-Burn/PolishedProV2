@@ -90,11 +90,26 @@ final class Middleware
     }
 
     /** Make the caller's current plan available to controllers and views. */
+    /**
+     * Make the caller's plan and access state available to every artist view.
+     *
+     * This deliberately does not block the dashboard. A lapsed artist is hidden
+     * from clients and cannot take bookings (enforced in Artist::PUBLIC_WHERE
+     * and therefore in BookingService), but they keep access to their own data
+     * so they can see what they are losing and pay to restore it. Locking them
+     * out of their own calendar would only make them harder to win back.
+     */
     private static function subscription(): void
     {
         $userId = Auth::id();
-        if ($userId !== null) {
-            View::share('currentPlan', Subscription::planFor($userId));
+        if ($userId === null) {
+            return;
+        }
+
+        View::share('currentPlan', Subscription::planFor($userId));
+
+        if (Auth::role() === 'artist') {
+            View::share('subscriptionAccess', Subscription::accessFor($userId));
         }
     }
 

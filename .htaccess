@@ -1,0 +1,26 @@
+# Root .htaccess
+#
+# Only needed when the document root cannot be pointed at public/ (typical
+# XAMPP/cPanel setup). It forwards every request into public/ and blocks direct
+# access to the application directories.
+#
+# On a proper VPS, set DocumentRoot to .../polishedpro-v2/public and delete
+# this file — that is the safer configuration.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Refuse direct requests to application internals.
+    RewriteRule ^(app|config|database|routes|storage|bin|docs)(/|$) - [F,L]
+    RewriteRule ^\.env - [F,L]
+
+    # Everything else is served from public/.
+    RewriteCond %{REQUEST_URI} !^/?public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes

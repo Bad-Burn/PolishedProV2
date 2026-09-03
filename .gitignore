@@ -1,0 +1,23 @@
+# Secrets — never commit this. It holds APP_KEY, database and PayPal credentials.
+.env
+
+# Runtime output
+storage/logs/*.log
+storage/cache/
+
+# User uploads: keep the directories and their hardening rules, not the content.
+public/uploads/*
+!public/uploads/.htaccess
+!public/uploads/*/
+public/uploads/*/*
+!public/uploads/*/.gitkeep
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/
+*.sublime-*

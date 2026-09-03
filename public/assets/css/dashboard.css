@@ -1,0 +1,515 @@
+/* ==========================================================================
+   PolishedPro — dashboard stylesheet
+   Loaded on top of app.css for the customer, artist and admin areas.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Shell
+   -------------------------------------------------------------------------- */
+
+.dash {
+  display: grid;
+  grid-template-columns: minmax(0, 15.5rem) minmax(0, 1fr);
+  align-items: start;
+  min-height: calc(100vh - var(--header-h));
+}
+
+.dash__sidebar {
+  position: sticky;
+  top: var(--header-h);
+  height: calc(100vh - var(--header-h));
+  padding: var(--sp-6) var(--sp-4);
+  border-right: 1px solid var(--line);
+  background: var(--canvas-sunk);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dash__main {
+  min-width: 0;
+  padding: var(--sp-8) clamp(var(--sp-5), 3vw, var(--sp-10)) var(--sp-16);
+}
+
+.dash__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-8);
+  flex-wrap: wrap;
+}
+.dash__head h1 { font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem); }
+.dash__head p { color: var(--ink-muted); margin-top: var(--sp-1); max-width: 56ch; }
+
+/* --------------------------------------------------------------------------
+   2. Sidebar navigation
+   -------------------------------------------------------------------------- */
+
+.side-nav { display: grid; gap: 0.125rem; }
+
+.side-nav__section {
+  margin-top: var(--sp-6);
+  margin-bottom: var(--sp-2);
+  padding-inline: var(--sp-3);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.side-nav__section:first-child { margin-top: 0; }
+
+.side-nav__link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0.5rem var(--sp-3);
+  border-radius: var(--r-md);
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background var(--speed) var(--ease), color var(--speed) var(--ease);
+}
+.side-nav__link:hover { background: var(--surface); color: var(--ink); }
+.side-nav__link.is-active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
+.side-nav__link svg { width: 1.125rem; height: 1.125rem; flex-shrink: 0; color: currentColor; opacity: 0.75; }
+.side-nav__link.is-active svg { opacity: 1; }
+
+.side-nav__count {
+  margin-left: auto;
+  min-width: 1.375rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.side-nav__count--quiet { background: var(--line); color: var(--ink-muted); }
+
+/* Plan status block pinned under the artist navigation. */
+.plan-card {
+  margin-top: var(--sp-6);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.plan-card__name { font-weight: 600; font-size: 0.9375rem; }
+.plan-card__meta { font-size: 0.8125rem; color: var(--ink-muted); margin-top: 0.1rem; }
+
+.meter { margin-top: var(--sp-3); }
+.meter__track { height: 5px; background: var(--line); border-radius: var(--r-pill); overflow: hidden; }
+.meter__fill { height: 100%; background: var(--accent); border-radius: var(--r-pill); transition: width 400ms var(--ease); }
+.meter__fill.is-full { background: var(--caution); }
+.meter__label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   3. Stat tiles
+   -------------------------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-8);
+}
+
+.stat {
+  padding: var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.stat__label {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  margin-bottom: var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.stat__label svg { width: 1rem; height: 1rem; color: var(--ink-faint); }
+.stat__value {
+  font-family: var(--font-display);
+  font-size: 1.875rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.stat__delta { margin-top: var(--sp-2); font-size: 0.8125rem; display: flex; align-items: center; gap: 0.3em; }
+.stat__delta--up { color: var(--positive); }
+.stat__delta--down { color: var(--critical); }
+
+/* --------------------------------------------------------------------------
+   4. Tables
+   -------------------------------------------------------------------------- */
+
+.table-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.table-wrap .scroll-x { overflow-x: auto; }
+
+.table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+
+.table th {
+  padding: var(--sp-3) var(--sp-4);
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.table tbody tr:last-child td { border-bottom: 0; }
+.table tbody tr:hover { background: var(--surface-muted); }
+
+.table__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table__actions { text-align: right; white-space: nowrap; }
+.table__primary { font-weight: 600; color: var(--ink); }
+.table__sub { font-size: 0.8125rem; color: var(--ink-muted); }
+
+/* Person cell: avatar plus two lines of text. */
+.person { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.person__text { min-width: 0; }
+.person__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person__meta { font-size: 0.8125rem; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Sortable column headers */
+.table th a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 0.3em; }
+.table th a:hover { color: var(--ink); }
+
+/* --------------------------------------------------------------------------
+   5. Booking list items (mobile-friendly alternative to a table)
+   -------------------------------------------------------------------------- */
+
+.booking-item {
+  display: grid;
+  grid-template-columns: minmax(0, 4.5rem) minmax(0, 1fr) auto;
+  gap: var(--sp-5);
+  align-items: center;
+  padding: var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  transition: border-color var(--speed) var(--ease);
+}
+.booking-item:hover { border-color: var(--line-strong); }
+.booking-item + .booking-item { margin-top: var(--sp-3); }
+
+.booking-item__when {
+  text-align: center;
+  padding: var(--sp-2);
+  border-radius: var(--r-md);
+  background: var(--surface-muted);
+}
+.booking-item__month { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-muted); }
+.booking-item__day { font-family: var(--font-display); font-size: 1.5rem; line-height: 1.1; }
+.booking-item__time { font-size: 0.75rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+.booking-item__title { font-weight: 600; margin-bottom: 0.1rem; }
+.booking-item__title a { color: var(--ink); text-decoration: none; }
+.booking-item__title a:hover { color: var(--accent); }
+.booking-item__meta { font-size: 0.875rem; color: var(--ink-muted); display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+.booking-item__side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-2); }
+
+/* --------------------------------------------------------------------------
+   6. Charts (pure CSS, no library)
+   -------------------------------------------------------------------------- */
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  height: 11rem;
+  padding-top: var(--sp-4);
+}
+.chart__col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: var(--sp-2); height: 100%; min-width: 0; }
+.chart__bar {
+  width: 100%;
+  max-width: 3rem;
+  min-height: 3px;
+  background: var(--accent);
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  opacity: 0.85;
+  transition: opacity var(--speed) var(--ease);
+}
+.chart__col:hover .chart__bar { opacity: 1; }
+.chart__label { font-size: 0.75rem; color: var(--ink-muted); white-space: nowrap; }
+
+/* Horizontal ranked bars, e.g. top services. */
+.rank-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-3); align-items: baseline; margin-bottom: var(--sp-2); }
+.rank-bar__name { font-size: 0.9375rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-bar__value { font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rank-bar__track { grid-column: 1 / -1; height: 6px; background: var(--line); border-radius: var(--r-pill); overflow: hidden; margin-bottom: var(--sp-4); }
+.rank-bar__fill { height: 100%; background: var(--accent); border-radius: var(--r-pill); }
+
+/* --------------------------------------------------------------------------
+   7. Schedule editor
+   -------------------------------------------------------------------------- */
+
+.schedule-day {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  gap: var(--sp-5);
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--line);
+  align-items: start;
+}
+.schedule-day:last-child { border-bottom: 0; }
+.schedule-day__name { font-weight: 600; padding-top: 0.5rem; }
+.schedule-day__windows { display: grid; gap: var(--sp-3); }
+
+.time-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.time-range__sep { color: var(--ink-muted); font-size: 0.875rem; }
+
+.day-off { color: var(--ink-faint); font-size: 0.9375rem; padding-top: 0.5rem; }
+
+/* --------------------------------------------------------------------------
+   8. Two-factor setup
+   -------------------------------------------------------------------------- */
+
+.totp-setup { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-8); align-items: start; }
+
+.totp-key {
+  display: block;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+}
+
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  background: var(--surface-muted);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+/* Six-digit code entry */
+.code-input {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   8b. List + sticky form layout (services, portfolio)
+   -------------------------------------------------------------------------- */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  gap: var(--sp-8);
+  align-items: start;
+}
+.split__aside { position: sticky; top: calc(var(--header-h) + var(--sp-5)); }
+
+@media (max-width: 1180px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+  /* The form comes first on narrow screens — it is the primary action. */
+  .split__aside { position: static; order: -1; }
+}
+
+/* --------------------------------------------------------------------------
+   9. Filter bar
+   -------------------------------------------------------------------------- */
+
+.filter-bar {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  margin-bottom: var(--sp-5);
+}
+.filter-bar .field { margin-bottom: 0; }
+.filter-bar .field__label { font-size: 0.75rem; margin-bottom: var(--sp-1); }
+.filter-bar__grow { flex: 1 1 14rem; }
+
+/* --------------------------------------------------------------------------
+   10. Inline confirmation for destructive actions
+   -------------------------------------------------------------------------- */
+
+.confirm { position: relative; display: inline-block; }
+.confirm > summary { list-style: none; cursor: pointer; }
+.confirm > summary::-webkit-details-marker { display: none; }
+.confirm__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--sp-2));
+  z-index: 40;
+  width: 17rem;
+  padding: var(--sp-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  text-align: left;
+  white-space: normal;
+}
+.confirm__panel p { font-size: 0.875rem; color: var(--ink-soft); margin-bottom: var(--sp-3); }
+
+/* --------------------------------------------------------------------------
+   11. Responsive
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1024px) {
+  .dash { grid-template-columns: minmax(0, 1fr); }
+
+  /* Sidebar becomes a horizontal scroller above the content. */
+  .dash__sidebar {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: var(--sp-3) var(--sp-4);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .side-nav { grid-auto-flow: column; grid-auto-columns: max-content; gap: var(--sp-1); }
+  .side-nav__section { display: none; }
+  .side-nav__link { white-space: nowrap; }
+  .plan-card { display: none; }
+
+  .dash__main { padding: var(--sp-6) var(--sp-5) var(--sp-12); }
+
+  .totp-setup { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .booking-item { grid-template-columns: 3.75rem minmax(0, 1fr); }
+  .booking-item__side { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
+
+  .schedule-day { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  .schedule-day__name { padding-top: 0; }
+  .time-range { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+  .time-range > :last-child { grid-column: 1 / -1; justify-self: start; }
+
+  .recovery-codes { grid-template-columns: minmax(0, 1fr); }
+  .stat__value { font-size: 1.625rem; }
+  .filter-bar { padding: var(--sp-3); }
+}
+
+/* --------------------------------------------------------------------------
+   10. Tables on a phone
+   -------------------------------------------------------------------------- */
+
+/* A table inside .scroll-x still widened the whole document in Chrome, so the
+   page itself scrolled sideways. Painting containment keeps the overflow where
+   it belongs — inside the scroller. */
+.table-wrap { contain: paint; }
+
+@media (max-width: 700px) {
+  /* Below this width a six-column table is unreadable however you scroll it,
+     so each row becomes a card and every cell carries its own label. The
+     labels come from data-label on the <td>, which the views supply. */
+  .table-wrap { border: 0; background: none; contain: none; }
+  .table-wrap .scroll-x { overflow-x: visible; }
+
+  .table { display: block; font-size: 1rem; }
+  .table thead { display: none; }
+  .table tbody { display: block; }
+
+  .table tbody tr {
+    display: block;
+    margin-bottom: var(--sp-3);
+    padding: var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+  .table tbody tr:hover { background: var(--surface); }
+  .table tbody tr:last-child { margin-bottom: 0; }
+
+  .table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    padding: var(--sp-2) 0;
+    border-bottom: 0;
+    text-align: left;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  /* The first cell is the card's heading: no label, full width, a bit bigger. */
+  .table td:first-child {
+    display: block;
+    padding-top: 0;
+    padding-bottom: var(--sp-3);
+    margin-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+  }
+  .table td:first-child::before { content: none; }
+
+  /* Actions sit as a full-width row of buttons at the foot of the card. */
+  .table td.table__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    justify-content: flex-start;
+    padding-top: var(--sp-3);
+    margin-top: var(--sp-2);
+    border-top: 1px solid var(--line);
+  }
+  .table td.table__actions::before { content: none; }
+  .table td.table__actions .btn { flex: 1 1 auto; justify-content: center; }
+
+  /* A cell explicitly marked as spanning the card keeps its own layout. */
+  .table td[colspan] { display: block; }
+  .table td[colspan]::before { content: none; }
+
+  .table__num { text-align: right; }
+  .person__name, .person__meta { white-space: normal; }
+}

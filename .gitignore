@@ -4,6 +4,9 @@
 # Runtime output
 storage/logs/*.log
 storage/cache/
+node_modules/
+test-results/
+playwright-report/
 
 # User uploads: keep the directories and their hardening rules, not the content.
 public/uploads/*

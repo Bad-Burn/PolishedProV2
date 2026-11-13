@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Config;
 use App\Core\Controller;
 use App\Core\Request;
+use App\Core\Url;
 use App\Models\Artist;
 use App\Models\Booking;
 use App\Models\Favorite;
@@ -78,5 +80,61 @@ final class HomeController extends Controller
         }
 
         $this->view('pages/' . $slug, ['title' => $pages[$slug]]);
+    }
+
+    /**
+     * Keep crawlers on the public pages. Anything that is not production —
+     * a staging copy, a demo — asks not to be indexed at all, so it never
+     * competes with the real site in search results.
+     */
+    public function robots(Request $request): never
+    {
+        $lines = ['User-agent: *'];
+
+        if (Config::get('app.env') !== 'production') {
+            $lines[] = 'Disallow: /';
+        } else {
+            foreach (['/account', '/artist/', '/artist$', '/admin', '/settings', '/bookings', '/book/', '/notifications', '/login', '/register', '/forgot-password', '/reset-password', '/verify-email'] as $path) {
+                // Not Url::to(): it trims the trailing slash that keeps
+                // "/artist/" from also blocking the public "/artists" pages.
+                $lines[] = 'Disallow: ' . Url::basePath() . $path;
+            }
+            $lines[] = '';
+            $lines[] = 'Sitemap: ' . Url::absolute('/sitemap.xml');
+        }
+
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Cache-Control: public, max-age=86400');
+        echo implode("\n", $lines) . "\n";
+        exit;
+    }
+
+    public function sitemap(Request $request): never
+    {
+        $urls = [];
+
+        foreach (['/', '/artists', '/categories', '/for-artists', '/pricing', '/help'] as $path) {
+            $urls[] = ['loc' => Url::absolute($path), 'lastmod' => null];
+        }
+
+        foreach (Artist::publicSlugs() as $artist) {
+            $urls[] = [
+                'loc'     => Url::absolute('/artists/' . $artist['slug']),
+                'lastmod' => date('Y-m-d', (int) strtotime((string) $artist['updated_at'])),
+            ];
+        }
+
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Cache-Control: public, max-age=3600');
+
+        echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+        foreach ($urls as $url) {
+            echo '  <url><loc>' . htmlspecialchars($url['loc'], ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</loc>'
+                . ($url['lastmod'] === null ? '' : '<lastmod>' . $url['lastmod'] . '</lastmod>')
+                . "</url>\n";
+        }
+        echo "</urlset>\n";
+        exit;
     }
 }

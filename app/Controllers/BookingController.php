@@ -15,6 +15,7 @@ use App\Models\Review;
 use App\Models\Service;
 use App\Services\AvailabilityService;
 use App\Services\BookingService;
+use App\Services\EmailVerification;
 
 final class BookingController extends Controller
 {
@@ -64,6 +65,27 @@ final class BookingController extends Controller
 
         if ($service === null) {
             $this->failure('That service is no longer available.', '/artists');
+        }
+
+        $user = (array) Auth::user();
+
+        if (!EmailVerification::isVerified($user)) {
+            $this->failure(
+                'Confirm your email address before booking — use the link we sent to ' . $user['email'] . '.',
+                '/book/' . $serviceId
+            );
+        }
+
+        // Every pending or confirmed booking blocks its slot for everyone else
+        // (instantly, for artists with instant booking), so one account cannot
+        // be allowed to sit on an unlimited number of them.
+        $maxUpcoming = (int) Config::get('app.booking.max_upcoming_per_client', 5);
+        if (Booking::countUpcomingFor((int) $user['id']) >= $maxUpcoming) {
+            $this->failure(
+                'You already have ' . plural($maxUpcoming, 'upcoming booking') . '. '
+                    . 'Once one of them has happened, or if you cancel one, you can book again.',
+                '/account'
+            );
         }
 
         $data = $this->validate($request, [

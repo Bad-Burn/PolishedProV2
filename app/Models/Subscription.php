@@ -16,6 +16,14 @@ use App\Core\Database;
  */
 final class Subscription
 {
+    /**
+     * PayPal charges a renewal at `next_billing_time`, but the sale (and its
+     * webhook) can land hours later. A subscription that is still set to renew
+     * keeps working this long past its period end, so a paying artist does not
+     * drop out of search while PayPal catches up. A cancelled one gets nothing.
+     */
+    public const RENEWAL_GRACE_DAYS = 3;
+
     /** @return array<string, mixed>|null the artist's current active subscription */
     public static function activeFor(int $userId): ?array
     {
@@ -29,11 +37,25 @@ final class Subscription
               WHERE s.user_id = :u
                 AND s.status IN ("active", "past_due")
                 AND p.price_monthly > 0
-                AND (s.current_period_end IS NULL OR s.current_period_end > NOW())
+                AND ' . self::periodLiveSql('s') . '
               ORDER BY p.featured_weight DESC, s.id DESC
               LIMIT 1',
             ['u' => $userId]
         );
+    }
+
+    /**
+     * SQL for "this row's paid period has not run out", grace included.
+     * Artist::BASE_SELECT and Artist::HAS_ACCESS spell the same test out
+     * inline, because class constants cannot call a method — keep them in step.
+     */
+    public static function periodLiveSql(string $alias): string
+    {
+        return "({$alias}.current_period_end IS NULL
+                 OR {$alias}.current_period_end > NOW()
+                 OR ({$alias}.provider = 'paypal'
+                     AND {$alias}.cancel_at_period_end = 0
+                     AND {$alias}.current_period_end > NOW() - INTERVAL " . self::RENEWAL_GRACE_DAYS . ' DAY))';
     }
 
     public static function trialDays(): int
@@ -47,34 +69,53 @@ final class Subscription
      * This is the one question the rest of the app should ask. `planFor()`
      * answers "what may they do"; this answers "may they trade at all".
      *
-     * @return array{state:string, trial_ends_at:?string, days_left:int, is_live:bool}
+     * An artist still waiting for approval counts as trialing, with the full
+     * trial ahead of them: they need the trial plan's limits to set up their
+     * services, and the clock only starts once an admin approves them
+     * (AdminController::approveArtist). They are not live, and the public
+     * queries keep them hidden regardless.
+     *
+     * @return array{state:string, trial_ends_at:?string, days_left:int, is_live:bool, awaiting_approval:bool}
      */
     public static function accessFor(int $userId): array
     {
         if (self::activeFor($userId) !== null) {
-            return ['state' => 'subscribed', 'trial_ends_at' => null, 'days_left' => 0, 'is_live' => true];
+            return ['state' => 'subscribed', 'trial_ends_at' => null, 'days_left' => 0, 'is_live' => true, 'awaiting_approval' => false];
         }
 
-        $trialEnds = Database::scalar(
-            'SELECT trial_ends_at FROM users WHERE id = :u AND role = "artist" LIMIT 1',
+        $artist = Database::selectOne(
+            'SELECT trial_ends_at, approved_at FROM users WHERE id = :u AND role = "artist" LIMIT 1',
             ['u' => $userId]
         );
 
+        if ($artist !== null && empty($artist['approved_at'])) {
+            return [
+                'state'             => 'trialing',
+                'trial_ends_at'     => date('Y-m-d H:i:s', strtotime('+' . self::trialDays() . ' days')),
+                'days_left'         => self::trialDays(),
+                'is_live'           => false,
+                'awaiting_approval' => true,
+            ];
+        }
+
+        $trialEnds = $artist['trial_ends_at'] ?? null;
+
         if ($trialEnds === null || $trialEnds === '') {
-            return ['state' => 'locked', 'trial_ends_at' => null, 'days_left' => 0, 'is_live' => false];
+            return ['state' => 'locked', 'trial_ends_at' => null, 'days_left' => 0, 'is_live' => false, 'awaiting_approval' => false];
         }
 
         $endsAt = strtotime((string) $trialEnds);
         if ($endsAt === false || $endsAt <= time()) {
-            return ['state' => 'locked', 'trial_ends_at' => (string) $trialEnds, 'days_left' => 0, 'is_live' => false];
+            return ['state' => 'locked', 'trial_ends_at' => (string) $trialEnds, 'days_left' => 0, 'is_live' => false, 'awaiting_approval' => false];
         }
 
         return [
-            'state'         => 'trialing',
-            'trial_ends_at' => (string) $trialEnds,
+            'state'             => 'trialing',
+            'trial_ends_at'     => (string) $trialEnds,
             // Part of a day still counts as a day to the person reading it.
-            'days_left'     => (int) max(1, ceil(($endsAt - time()) / 86400)),
-            'is_live'       => true,
+            'days_left'         => (int) max(1, ceil(($endsAt - time()) / 86400)),
+            'is_live'           => true,
+            'awaiting_approval' => false,
         ];
     }
 
@@ -236,14 +277,31 @@ final class Subscription
     /**
      * Mark a subscription live and retire any earlier one for the same artist,
      * so an upgrade never leaves two active rows fighting over entitlements.
+     *
+     * Retiring a row here only changes our records. The caller must also stop
+     * the PayPal agreements returned, or the artist keeps paying for the plan
+     * they just replaced — use SubscriptionService::activate(), not this.
+     *
+     * @return array<int, string> PayPal ids of replaced subscriptions that were still set to renew
      */
-    public static function activate(int $id, ?string $periodStart = null, ?string $periodEnd = null): void
+    public static function activate(int $id, ?string $periodStart = null, ?string $periodEnd = null): array
     {
-        Database::transaction(static function () use ($id, $periodStart, $periodEnd): void {
+        return Database::transaction(static function () use ($id, $periodStart, $periodEnd): array {
             $row = Database::selectOne('SELECT user_id FROM subscriptions WHERE id = :id', ['id' => $id]);
             if ($row === null) {
-                return;
+                return [];
             }
+
+            $stillBilling = Database::select(
+                'SELECT paypal_subscription_id
+                   FROM subscriptions
+                  WHERE user_id = :u AND id <> :id
+                    AND provider = "paypal"
+                    AND paypal_subscription_id IS NOT NULL
+                    AND status IN ("active", "past_due")
+                    AND cancel_at_period_end = 0',
+                ['u' => (int) $row['user_id'], 'id' => $id]
+            );
 
             Database::affectingStatement(
                 'UPDATE subscriptions
@@ -267,6 +325,8 @@ final class Subscription
                     'id'    => $id,
                 ]
             );
+
+            return array_map(static fn (array $r): string => (string) $r['paypal_subscription_id'], $stillBilling);
         });
     }
 
@@ -298,28 +358,69 @@ final class Subscription
         );
     }
 
-    public static function resume(int $id): void
+    /**
+     * PayPal has stopped billing this agreement (the artist cancelled here or
+     * on PayPal's side). What they already paid for still runs to the end of
+     * the period; expireLapsed() closes it after that. A row with no paid time
+     * left — or one already retired by an upgrade — is simply cancelled.
+     */
+    public static function markCancelled(int $id): void
     {
         Database::affectingStatement(
-            'UPDATE subscriptions SET cancel_at_period_end = 0, status = "active" WHERE id = :id',
+            'UPDATE subscriptions
+                SET status = CASE
+                        WHEN status IN ("active", "past_due") AND current_period_end > NOW() THEN status
+                        ELSE "cancelled"
+                    END,
+                    cancel_at_period_end = 1,
+                    cancelled_at = COALESCE(cancelled_at, NOW())
+              WHERE id = :id',
             ['id' => $id]
         );
     }
 
-    public static function extendPeriod(int $id, string $newPeriodEnd): void
+    /** Undo a pending cancellation. Only meaningful for manual grants — a cancelled PayPal agreement cannot be revived. */
+    public static function resume(int $id): void
     {
         Database::affectingStatement(
+            'UPDATE subscriptions SET cancel_at_period_end = 0, cancelled_at = NULL WHERE id = :id',
+            ['id' => $id]
+        );
+    }
+
+    /**
+     * A renewal payment cleared: move the period forward to `$newPeriodEnd`.
+     *
+     * Idempotent — PayPal reports the first payment and the activation
+     * separately, and both may carry the same next billing date, so the period
+     * only ever moves forwards. A retired row (replaced by an upgrade) has its
+     * dates updated but is never switched back on.
+     */
+    public static function extendPeriod(int $id, string $newPeriodEnd): void
+    {
+        // Named placeholders cannot repeat with native prepares, hence end1..3.
+        Database::affectingStatement(
             'UPDATE subscriptions
-                SET current_period_start = current_period_end,
-                    current_period_end = :end,
-                    status = "active"
+                SET current_period_start = CASE
+                        WHEN current_period_end IS NOT NULL AND current_period_end < :end1 THEN current_period_end
+                        ELSE current_period_start
+                    END,
+                    current_period_end = CASE
+                        WHEN current_period_end IS NULL OR current_period_end < :end2 THEN :end3
+                        ELSE current_period_end
+                    END,
+                    status = CASE WHEN status IN ("active", "past_due", "expired") THEN "active" ELSE status END
               WHERE id = :id',
-            ['end' => $newPeriodEnd, 'id' => $id]
+            ['end1' => $newPeriodEnd, 'end2' => $newPeriodEnd, 'end3' => $newPeriodEnd, 'id' => $id]
         );
     }
 
     /** Admin override: grant a plan without going through PayPal. */
-    public static function grantManual(int $userId, int $planId, int $months = 1): int
+    /**
+     * @return array{id:int, replaced:array<int, string>} the new row, and the
+     *         PayPal agreements it replaced that the caller must cancel
+     */
+    public static function grantManual(int $userId, int $planId, int $months = 1): array
     {
         $id = Database::insert(
             'INSERT INTO subscriptions
@@ -334,9 +435,31 @@ final class Subscription
             ]
         );
 
-        self::activate($id, date('Y-m-d H:i:s'), date('Y-m-d H:i:s', strtotime("+{$months} months")));
+        $replaced = self::activate($id, date('Y-m-d H:i:s'), date('Y-m-d H:i:s', strtotime("+{$months} months")));
 
-        return $id;
+        return ['id' => $id, 'replaced' => $replaced];
+    }
+
+    /**
+     * PayPal agreements for this artist that would keep charging them if their
+     * account disappeared.
+     *
+     * @return array<int, string>
+     */
+    public static function billingPaypalIdsFor(int $userId): array
+    {
+        $rows = Database::select(
+            'SELECT paypal_subscription_id
+               FROM subscriptions
+              WHERE user_id = :u
+                AND provider = "paypal"
+                AND paypal_subscription_id IS NOT NULL
+                AND status IN ("active", "past_due")
+                AND cancel_at_period_end = 0',
+            ['u' => $userId]
+        );
+
+        return array_map(static fn (array $r): string => (string) $r['paypal_subscription_id'], $rows);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -360,12 +483,45 @@ final class Subscription
     public static function expireLapsed(): int
     {
         return Database::affectingStatement(
-            'UPDATE subscriptions
-                SET status = "expired"
-              WHERE status IN ("active", "past_due")
-                AND current_period_end IS NOT NULL
-                AND current_period_end < NOW()'
+            'UPDATE subscriptions s
+                SET s.status = "expired"
+              WHERE s.status IN ("active", "past_due")
+                AND s.current_period_end IS NOT NULL
+                AND NOT ' . self::periodLiveSql('s')
         );
+    }
+
+    /**
+     * Live artists whose trial ends within `$days` and who have neither
+     * subscribed nor been warned yet.
+     *
+     * @return array<int, array{id:int, trial_ends_at:string}>
+     */
+    public static function trialsEndingWithin(int $days): array
+    {
+        return Database::select(
+            'SELECT u.id, u.trial_ends_at
+               FROM users u
+              WHERE u.role = "artist"
+                AND u.status = "active"
+                AND u.approved_at IS NOT NULL
+                AND u.trial_warned_at IS NULL
+                AND u.trial_ends_at > NOW()
+                AND u.trial_ends_at <= NOW() + INTERVAL ' . max(1, $days) . ' DAY
+                AND NOT EXISTS (
+                    SELECT 1 FROM subscriptions s
+                     WHERE s.user_id = u.id AND s.status IN ("active", "past_due", "pending")
+                )'
+        );
+    }
+
+    /** Claim the warning for this artist. False if another run already sent it. */
+    public static function markTrialWarned(int $userId): bool
+    {
+        return Database::affectingStatement(
+            'UPDATE users SET trial_warned_at = NOW() WHERE id = :u AND trial_warned_at IS NULL',
+            ['u' => $userId]
+        ) === 1;
     }
 
     // -- Admin reporting ----------------------------------------------------
@@ -446,22 +602,64 @@ final class Subscription
     public static function eventAlreadyHandled(string $providerEventId): bool
     {
         return Database::scalar(
-            'SELECT 1 FROM subscription_events WHERE provider_event_id = :id LIMIT 1',
+            'SELECT 1 FROM subscription_events
+              WHERE provider_event_id = :id AND processing_status = "processed" LIMIT 1',
             ['id' => $providerEventId]
         ) !== null;
     }
 
-    public static function recordEvent(?int $subscriptionId, string $eventType, ?string $providerEventId, array $payload): void
+    /**
+     * Atomically claim a PayPal event. Failed or abandoned claims can be
+     * retried; a recent claim belongs to a handler that is still working.
+     */
+    public static function claimEvent(?int $subscriptionId, string $eventType, string $providerEventId, array $payload): bool
     {
-        Database::insert(
-            'INSERT INTO subscription_events (subscription_id, provider_event_id, event_type, payload)
-             VALUES (:s, :e, :t, :p)',
-            [
-                's' => $subscriptionId,
-                'e' => $providerEventId,
-                't' => $eventType,
-                'p' => json_encode($payload, JSON_UNESCAPED_SLASHES),
-            ]
+        $bindings = [
+            's' => $subscriptionId,
+            'e' => $providerEventId,
+            't' => $eventType,
+            'p' => json_encode($payload, JSON_UNESCAPED_SLASHES),
+        ];
+
+        if (Database::affectingStatement(
+            'INSERT IGNORE INTO subscription_events
+                (subscription_id, provider_event_id, event_type, payload, processing_status, processing_started_at)
+             VALUES (:s, :e, :t, :p, "processing", NOW())',
+            $bindings
+        ) === 1) {
+            return true;
+        }
+
+        return Database::affectingStatement(
+            'UPDATE subscription_events
+                SET subscription_id = :s, event_type = :t, payload = :p,
+                    processing_status = "processing", processing_started_at = NOW(), processed_at = NULL
+              WHERE provider_event_id = :e
+                AND processing_status <> "processed"
+                AND (processing_status = "failed"
+                     OR processing_started_at IS NULL
+                     OR processing_started_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE))',
+            $bindings
+        ) === 1;
+    }
+
+    public static function markEventProcessed(string $providerEventId): void
+    {
+        Database::affectingStatement(
+            'UPDATE subscription_events
+                SET processing_status = "processed", processing_started_at = NULL, processed_at = NOW()
+              WHERE provider_event_id = :e AND processing_status = "processing"',
+            ['e' => $providerEventId]
+        );
+    }
+
+    public static function markEventFailed(string $providerEventId): void
+    {
+        Database::affectingStatement(
+            'UPDATE subscription_events
+                SET processing_status = "failed", processing_started_at = NULL
+              WHERE provider_event_id = :e AND processing_status = "processing"',
+            ['e' => $providerEventId]
         );
     }
 }

@@ -599,6 +599,53 @@ final class Booking
      * Sweep past-due appointments into `completed` so ratings and revenue are
      * not stuck waiting on an artist to tick a box. Runs opportunistically.
      */
+    /** Appointments this customer is holding that have not happened yet. */
+    public static function countUpcomingFor(int $customerId): int
+    {
+        return (int) Database::scalar(
+            'SELECT COUNT(*) FROM bookings
+              WHERE customer_id = :c AND status IN ("pending", "confirmed") AND starts_at > NOW()',
+            ['c' => $customerId]
+        );
+    }
+
+    /**
+     * Confirmed appointments in the next 24 hours that have not been reminded.
+     * Bookings made in the last two hours are skipped — the confirmation they
+     * just received is reminder enough.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function dueForReminder(): array
+    {
+        return Database::select(
+            'SELECT b.id, b.service_name, b.starts_at,
+                    c.id AS customer_id, c.email AS customer_email, c.full_name AS customer_name,
+                    a.id AS artist_id,   a.email AS artist_email,   a.full_name AS artist_name,
+                    ap.display_name
+               FROM bookings b
+               INNER JOIN users c ON c.id = b.customer_id
+               INNER JOIN users a ON a.id = b.artist_id
+               LEFT JOIN artist_profiles ap ON ap.user_id = b.artist_id
+              WHERE b.status = "confirmed"
+                AND b.reminder_sent_at IS NULL
+                AND b.starts_at > NOW()
+                AND b.starts_at <= NOW() + INTERVAL 24 HOUR
+                AND b.created_at < NOW() - INTERVAL 2 HOUR
+              ORDER BY b.starts_at ASC
+              LIMIT 500'
+        );
+    }
+
+    /** Claim a booking for reminding. False if another run already did. */
+    public static function markReminded(int $bookingId): bool
+    {
+        return Database::affectingStatement(
+            'UPDATE bookings SET reminder_sent_at = NOW() WHERE id = :id AND reminder_sent_at IS NULL',
+            ['id' => $bookingId]
+        ) === 1;
+    }
+
     public static function autoCompleteOverdue(): int
     {
         return Database::affectingStatement(

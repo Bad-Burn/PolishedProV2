@@ -45,6 +45,18 @@ the target account, so neither password spraying across many accounts nor a focu
 attack on one account gets unlimited attempts. Five attempts per 15 minutes by default.
 → `app/Core/RateLimiter.php`, `AuthController::login()`
 
+Behind a proxy (`TRUSTED_PROXY=true`) the client address comes from `CF-Connecting-IP`,
+or the *last* `X-Forwarded-For` entry — the one our own proxy appended. The entries to
+its left come from the client and are forgeable; trusting the first one would let an
+attacker present a new IP on every request and walk past the per-IP throttle.
+
+**Email confirmation** — an account cannot book until its address is confirmed, and each
+client may hold at most five upcoming bookings. Every booking blocks a slot for everyone
+else, so without these a throwaway address could fill an artist's calendar. The
+confirmation link is an HMAC over the user id, an expiry and the *current* address, so
+changing the email voids every link sent to the old one.
+→ `app/Services/EmailVerification.php`, `BookingController::store()`
+
 **No user enumeration** — a wrong password, a non-existent account and a malformed
 email all produce the same message. `Hash::verify()` runs a dummy verification when no
 hash exists so the timing does not differ either. Password reset always reports
@@ -125,8 +137,10 @@ Three layers, because one is never enough:
 
 Cross-role access returns 403 and is written to `storage/logs/security.log`.
 
-Verified by the smoke tests: a client hitting `/artist` gets 403; an artist hitting
-another artist's booking gets 403; a client hitting an unrelated booking gets 403.
+These should be checked by automated tests — a client hitting `/artist` gets 403; an
+artist hitting another artist's booking gets 403; a client hitting an unrelated booking
+gets 403. **No such test suite exists in the repository yet.** Until one does, check them
+by hand before every release.
 
 ---
 
@@ -235,8 +249,14 @@ from the PayPal API. A forged return URL cannot activate a plan.
 **Entitlements are enforced on the write path** — `Subscription::serviceAllowance()` is
 checked in the controller before anything is created or published, not only in the
 template. Plan-gated features like instant booking ignore the submitted field entirely
-unless the plan permits it, so a crafted POST cannot enable them. Both are covered by
-the smoke tests.
+unless the plan permits it, so a crafted POST cannot enable them.
+
+**Our records and PayPal never drift apart** — every path that replaces or removes a paid
+plan (upgrade, admin grant, account deletion) goes through `SubscriptionService`, which
+cancels the superseded PayPal agreement as well as retiring the row. Account deletion is
+refused if that cancellation fails, rather than leaving an orphaned agreement charging
+someone with no account. A late webhook for a plan that has already been replaced
+cannot switch it back on.
 
 → `app/Services/PayPalClient.php`, `app/Controllers/Webhook/PayPalController.php`
 
@@ -251,8 +271,11 @@ the smoke tests.
 - Rate-limit keys are HMACs, so the throttling table never stores raw emails or IPs
 - Password reset tokens are stored as SHA-256 hashes; a database leak yields no usable
   reset links
-- One session cookie and one optional remember-me cookie. No analytics, no third-party
-  tracking
+- One session cookie and one optional remember-me cookie. No analytics and no tracking.
+  The one third-party request is the Google Fonts stylesheet, which shares visitors' IP
+  addresses with Google — self-host the two fonts to remove it, and say so in the privacy
+  policy until then
+- Password reset links are emailed, never logged
 
 ---
 

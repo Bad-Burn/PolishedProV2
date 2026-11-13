@@ -29,6 +29,8 @@ $tabs = [
     <a class="btn btn--primary" href="<?= e(url('/artists')) ?>">Book something new</a>
 </header>
 
+<?= view_partial('verify-email-notice') ?>
+
 <div class="stats">
     <div class="stat">
         <p class="stat__label"><?= icon('calendar') ?> Upcoming</p>

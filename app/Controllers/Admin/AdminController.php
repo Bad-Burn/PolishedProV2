@@ -20,6 +20,7 @@ use App\Models\Review;
 use App\Models\Setting;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\SubscriptionService;
 
 /**
  * The admin console.
@@ -83,7 +84,16 @@ final class AdminController extends Controller
             $this->failure('That artist could not be found.', '/admin/users');
         }
 
-        User::update($userId, ['approved_at' => date('Y-m-d H:i:s')]);
+        $fields = ['approved_at' => date('Y-m-d H:i:s')];
+
+        // The trial is for trading, and an artist cannot trade until they are
+        // approved. Restart it on first approval so a slow review does not eat
+        // the days they were promised.
+        if (empty($user['approved_at']) && Subscription::activeFor($userId) === null) {
+            $fields['trial_ends_at'] = date('Y-m-d H:i:s', strtotime('+' . Subscription::trialDays() . ' days'));
+        }
+
+        User::update($userId, $fields);
         Availability::seedDefaults($userId);
 
         Notification::push(
@@ -176,6 +186,15 @@ final class AdminController extends Controller
 
         if ($user['role'] === 'admin') {
             $this->failure('Admin accounts must be removed from the command line.', '/admin/users');
+        }
+
+        // Deleting the row would orphan their PayPal agreement and leave it
+        // charging someone who no longer has an account.
+        if (!SubscriptionService::cancelAllBilling($userId, 'Account deleted by PolishedPro')) {
+            $this->failure(
+                'Their PayPal subscription could not be cancelled, so the account was kept. Cancel it in the PayPal dashboard, then try again.',
+                '/admin/users'
+            );
         }
 
         \App\Core\Uploader::delete($user['avatar_path'] ?? null);
@@ -285,7 +304,7 @@ final class AdminController extends Controller
             $this->failure('Pick a valid plan.', '/admin/subscriptions');
         }
 
-        $subscriptionId = Subscription::grantManual($userId, $planId, $months);
+        $subscriptionId = SubscriptionService::grantManual($userId, $planId, $months);
 
         Notification::push(
             $userId,

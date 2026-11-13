@@ -16,6 +16,8 @@ end_section();
     </div>
 </header>
 
+<?= view_partial('verify-email-notice') ?>
+
 <div class="card" style="max-width: 42rem;">
     <form method="post" action="<?= e(url('/settings')) ?>" enctype="multipart/form-data" data-once>
         <?= csrf_field() ?>

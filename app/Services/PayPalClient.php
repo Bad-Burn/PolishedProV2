@@ -144,11 +144,15 @@ final class PayPalClient
     /**
      * Start a subscription and hand back the approval URL to redirect to.
      *
+     * `$startAt` (local time) defers the first charge — used so an artist who
+     * subscribes mid-trial, or re-subscribes before a cancelled plan runs out,
+     * is not billed for days they already have.
+     *
      * @return array{id:string, approve_url:string}
      */
-    public static function createSubscription(string $paypalPlanId, array $subscriber, string $returnUrl, string $cancelUrl): array
+    public static function createSubscription(string $paypalPlanId, array $subscriber, string $returnUrl, string $cancelUrl, ?string $startAt = null): array
     {
-        $response = self::authedRequest('POST', '/v1/billing/subscriptions', [
+        $payload = [
             'plan_id'    => $paypalPlanId,
             'subscriber' => [
                 'name' => [
@@ -169,7 +173,16 @@ final class PayPalClient
                 'return_url' => $returnUrl,
                 'cancel_url' => $cancelUrl,
             ],
-        ]);
+        ];
+
+        // PayPal wants a future UTC instant; a start in the next few minutes
+        // is just "now", which is the default anyway.
+        $startTs = $startAt === null ? false : strtotime($startAt);
+        if ($startTs !== false && $startTs > time() + 300) {
+            $payload['start_time'] = gmdate('Y-m-d\TH:i:s\Z', $startTs);
+        }
+
+        $response = self::authedRequest('POST', '/v1/billing/subscriptions', $payload);
 
         $body = $response['body'];
 

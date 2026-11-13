@@ -132,6 +132,12 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
                     <?= csrf_field() ?>
                     <button class="btn btn--primary btn--sm" type="submit">Keep my plan</button>
                 </form>
+                <?php if (($current['provider'] ?? '') === 'paypal'): ?>
+                    <p class="tiny muted">
+                        You will confirm with PayPal. Nothing is charged until
+                        <?= e(date_label($current['current_period_end'] ?? null, 'F j')) ?>.
+                    </p>
+                <?php endif; ?>
             <?php else: ?>
                 <details class="confirm">
                     <summary class="btn btn--ghost btn--sm">Cancel plan</summary>
@@ -178,6 +184,13 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
             ]) ?>
         <?php endforeach; ?>
     </div>
+
+    <?php if ($status === 'trialing'): ?>
+        <p class="small mt-5">
+            Subscribing now does not cut your trial short — your first payment is taken on
+            <?= e(date_label($current['trial_ends_at'] ?? null, 'F j')) ?>.
+        </p>
+    <?php endif; ?>
 
     <p class="tiny muted mt-5">
         Prices in Philippine pesos. Paid plans bill through PayPal and can be cancelled from this page

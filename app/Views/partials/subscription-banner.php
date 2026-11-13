@@ -6,7 +6,7 @@
  * thing an artist must never be confused about is whether clients can
  * currently find and book them.
  *
- * @var array{state:string, trial_ends_at:?string, days_left:int, is_live:bool}|null $access
+ * @var array{state:string, trial_ends_at:?string, days_left:int, is_live:bool, awaiting_approval:bool}|null $access
  */
 
 declare(strict_types=1);
@@ -19,7 +19,16 @@ if ($access === null || $access['state'] === 'subscribed') {
 
 $warnAt = (int) \App\Core\Config::get('app.subscription.trial_warn_days', 3);
 ?>
-<?php if ($access['state'] === 'locked'): ?>
+<?php if (!empty($access['awaiting_approval'])): ?>
+    <div class="alert alert--info mb-6">
+        <?= icon('clock') ?>
+        <span>
+            <strong>Your profile is being reviewed.</strong>
+            Set up your services and hours in the meantime. Your
+            <?= e(plural(\App\Models\Subscription::trialDays(), 'day')) ?> free trial starts the day your profile goes live.
+        </span>
+    </div>
+<?php elseif ($access['state'] === 'locked'): ?>
     <div class="alert alert--error mb-6">
         <?= icon('alert') ?>
         <span>

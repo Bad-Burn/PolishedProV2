@@ -41,6 +41,12 @@ final class Config
             $len = strlen($value);
             if ($len >= 2 && ($value[0] === '"' || $value[0] === "'") && $value[$len - 1] === $value[0]) {
                 $value = substr($value, 1, -1);
+            } else {
+                // An unquoted value ends at an inline comment. Without this,
+                // "APP_DEBUG=false   # never in production" is the string
+                // "false   # never…", and PAYPAL_MODE=live with a comment
+                // silently stays on the sandbox API.
+                $value = rtrim((string) preg_replace('/\s+#.*$/', '', $value));
             }
 
             if ($key !== '' && getenv($key) === false) {

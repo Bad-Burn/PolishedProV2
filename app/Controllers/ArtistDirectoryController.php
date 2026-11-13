@@ -9,6 +9,7 @@ use App\Core\Config;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
+use App\Core\Url;
 use App\Models\Artist;
 use App\Models\Favorite;
 use App\Models\Portfolio;
@@ -91,6 +92,8 @@ final class ArtistDirectoryController extends Controller
         $this->view('pages/artist-profile', [
             'title'  => $artist['display_name'],
             'metaDescription' => excerpt($artist['headline'] ?? $artist['bio'] ?? '', 155),
+            // Artists share their profile link; let the preview show their work.
+            'ogImage'  => Url::upload($artist['cover_path'] ?? null) ?? Url::upload($artist['first_photo'] ?? null),
             'artist'   => $artist,
             'services' => $services,
             'portfolio' => Portfolio::forArtist($artistId, 12),

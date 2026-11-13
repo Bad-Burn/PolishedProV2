@@ -45,6 +45,13 @@ final class Database
 
             // Strict mode surfaces truncation/invalid-date bugs instead of silently coercing.
             $pdo->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION'");
+
+            // PHP writes timestamps in APP_TIMEZONE, while SQL compares them
+            // against NOW() in the server's zone — usually UTC on a VPS. Pin
+            // the session to PHP's offset or every trial, billing period and
+            // overdue check drifts by eight hours. An offset rather than a
+            // zone name, because the MySQL time zone tables are often empty.
+            $pdo->exec("SET time_zone = '" . (new \DateTimeImmutable())->format('P') . "'");
         } catch (PDOException $e) {
             Logger::error('Database connection failed: ' . $e->getMessage());
             throw new \RuntimeException('Unable to connect to the database. Check your .env settings.', 0, $e);

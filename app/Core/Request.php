@@ -205,11 +205,22 @@ final class Request
     public function ip(): string
     {
         if (Config::env('TRUSTED_PROXY', false) === true) {
+            // Cloudflare states the visitor's address outright.
+            $cloudflare = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '';
+            if (is_string($cloudflare) && filter_var($cloudflare, FILTER_VALIDATE_IP)) {
+                return $cloudflare;
+            }
+
+            // Otherwise take the address our proxy appended — the last entry.
+            // Everything to its left arrived from the client and can be forged,
+            // which would let one attacker look like a new IP on every request
+            // and walk straight past the login throttle.
             $forwarded = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
             if (is_string($forwarded) && $forwarded !== '') {
-                $first = trim(explode(',', $forwarded)[0]);
-                if (filter_var($first, FILTER_VALIDATE_IP)) {
-                    return $first;
+                $hops = array_map('trim', explode(',', $forwarded));
+                $last = (string) end($hops);
+                if (filter_var($last, FILTER_VALIDATE_IP)) {
+                    return $last;
                 }
             }
         }

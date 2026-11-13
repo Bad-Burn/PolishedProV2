@@ -16,6 +16,7 @@ use App\Models\Plan;
 use App\Models\Service;
 use App\Models\Subscription;
 use App\Services\PayPalClient;
+use App\Services\SubscriptionService;
 
 /**
  * Artist billing: choose a plan, pay through PayPal, manage or cancel.
@@ -54,7 +55,6 @@ final class SubscriptionController extends Controller
     public function checkout(Request $request): never
     {
         $artistId = (int) Auth::id();
-        $user     = Auth::user();
 
         $planId = $request->int('plan_id');
         $cycle  = $request->string('cycle') === 'yearly' ? 'yearly' : 'monthly';
@@ -69,9 +69,42 @@ final class SubscriptionController extends Controller
         }
 
         $currentPlan = Subscription::planFor($artistId);
-        if ((int) ($currentPlan['id'] ?? 0) === $planId && ($currentPlan['subscription_status'] ?? '') === 'active') {
+        if ((int) ($currentPlan['id'] ?? 0) === $planId
+            && ($currentPlan['subscription_status'] ?? '') === 'active'
+            && (int) ($currentPlan['cancel_at_period_end'] ?? 0) === 0
+        ) {
             $this->failure('You are already on that plan.', '/artist/subscription');
         }
+
+        $this->startCheckout($artistId, $plan, $cycle, $this->firstChargeAt($artistId));
+    }
+
+    /**
+     * When a new subscription should take its first payment.
+     *
+     * Time the artist already has — the rest of their trial, or the paid
+     * period of a plan they cancelled — is not charged for again. Switching
+     * from a plan that is still renewing starts straight away; the old
+     * agreement is cancelled when the new one activates.
+     */
+    private function firstChargeAt(int $artistId): ?string
+    {
+        $active = Subscription::activeFor($artistId);
+
+        if ($active !== null) {
+            return (int) $active['cancel_at_period_end'] === 1 ? $active['current_period_end'] : null;
+        }
+
+        $access = Subscription::accessFor($artistId);
+
+        return $access['state'] === 'trialing' ? $access['trial_ends_at'] : null;
+    }
+
+    /** @param array<string, mixed> $plan */
+    private function startCheckout(int $artistId, array $plan, string $cycle, ?string $startAt): never
+    {
+        $user   = Auth::user();
+        $planId = (int) $plan['id'];
 
         if (!PayPalClient::isConfigured()) {
             $this->failure(
@@ -103,7 +136,8 @@ final class SubscriptionController extends Controller
                     'email'      => (string) $user['email'],
                 ],
                 Url::absolute('/artist/subscription/return'),
-                Url::absolute('/artist/subscription/cancel')
+                Url::absolute('/artist/subscription/cancel'),
+                $startAt
             );
         } catch (\Throwable $e) {
             Logger::error('PayPal checkout failed: ' . $e->getMessage(), ['user_id' => $artistId]);
@@ -115,8 +149,9 @@ final class SubscriptionController extends Controller
         $subscriptionId = Subscription::createPending($artistId, $planId, $cycle, $result['id']);
 
         AuditLog::record('subscription.checkout_started', 'subscription', $subscriptionId, [
-            'plan'  => $plan['code'],
-            'cycle' => $cycle,
+            'plan'     => $plan['code'],
+            'cycle'    => $cycle,
+            'start_at' => $startAt,
         ]);
 
         \App\Core\Response::redirect($result['approve_url']);
@@ -161,7 +196,10 @@ final class SubscriptionController extends Controller
         $status = strtoupper((string) ($remote['status'] ?? ''));
 
         if ($status === 'ACTIVE' || $status === 'APPROVED') {
-            $this->activateFromRemote((int) $subscription['id'], $remote);
+            if (!$this->activateFromRemote((int) $subscription['id'], $remote)) {
+                // An old checkout link for a plan that has since been replaced.
+                $this->failure('That checkout is no longer current. Check your plan below.', '/artist/subscription');
+            }
 
             Notification::push(
                 $artistId,
@@ -187,7 +225,7 @@ final class SubscriptionController extends Controller
     }
 
     /** Copy the billing period across from PayPal's response. */
-    private function activateFromRemote(int $subscriptionId, array $remote): void
+    private function activateFromRemote(int $subscriptionId, array $remote): bool
     {
         $billing = $remote['billing_info'] ?? [];
 
@@ -199,7 +237,7 @@ final class SubscriptionController extends Controller
             ? date('Y-m-d H:i:s', (int) strtotime((string) $billing['next_billing_time']))
             : null;
 
-        Subscription::activate($subscriptionId, $periodStart, $periodEnd);
+        return SubscriptionService::activate($subscriptionId, $periodStart, $periodEnd);
     }
 
     public function cancelled(Request $request): never
@@ -226,7 +264,10 @@ final class SubscriptionController extends Controller
 
         if ($subscription['provider'] === 'paypal' && !empty($paypalId)) {
             try {
-                PayPalClient::cancelSubscription((string) $paypalId, 'Cancelled by the artist');
+                $cancelled = PayPalClient::cancelSubscription((string) $paypalId, 'Cancelled by the artist');
+                if (!$cancelled) {
+                    throw new \RuntimeException('PayPal refused the cancellation');
+                }
             } catch (\Throwable $e) {
                 Logger::error('PayPal cancellation failed: ' . $e->getMessage(), [
                     'subscription_id' => $subscription['id'],
@@ -251,7 +292,14 @@ final class SubscriptionController extends Controller
         );
     }
 
-    /** Undo a pending cancellation before the period ends. */
+    /**
+     * Undo a pending cancellation before the period ends.
+     *
+     * A cancelled PayPal agreement is final — PayPal has no way to revive it.
+     * So for PayPal, "keep my plan" is a fresh subscription to the same plan
+     * whose first charge falls on the day the current one runs out: the artist
+     * approves once and sees no gap and no double charge.
+     */
     public function resume(Request $request): never
     {
         $artistId     = (int) Auth::id();
@@ -262,6 +310,20 @@ final class SubscriptionController extends Controller
         }
 
         $this->authorizeOwner((int) $subscription['user_id'], 'subscription');
+
+        if ($subscription['provider'] === 'paypal') {
+            $plan = Plan::find((int) $subscription['plan_id']);
+            if ($plan === null || (int) $plan['is_active'] !== 1) {
+                $this->failure('That plan is no longer offered. Choose another plan below.', '/artist/subscription');
+            }
+
+            $this->startCheckout(
+                $artistId,
+                $plan,
+                (string) $subscription['billing_cycle'],
+                $subscription['current_period_end']
+            );
+        }
 
         Subscription::resume((int) $subscription['id']);
         AuditLog::record('subscription.resumed', 'subscription', (int) $subscription['id']);

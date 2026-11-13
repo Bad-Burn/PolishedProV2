@@ -18,6 +18,8 @@ use App\Core\Totp;
 use App\Core\Uploader;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Services\EmailVerification;
+use App\Services\SubscriptionService;
 
 /**
  * Account settings shared by every role: profile, password, two-factor,
@@ -84,6 +86,18 @@ final class SettingsController extends Controller
 
         User::update($userId, $fields);
         AuditLog::record('user.profile_updated', 'user', $userId, ['email_changed' => $emailChanged]);
+
+        if ($emailChanged) {
+            $updated = User::find($userId);
+            if ($updated !== null) {
+                EmailVerification::send($updated);
+            }
+
+            $this->success(
+                'Your profile has been updated. Confirm your new address with the link we just sent to it.',
+                '/settings'
+            );
+        }
 
         $this->success('Your profile has been updated.', '/settings');
     }
@@ -268,6 +282,16 @@ final class SettingsController extends Controller
         if ($upcoming > 0) {
             $this->failure(
                 'You still have ' . plural($upcoming, 'upcoming appointment') . '. Cancel or complete them first.',
+                '/settings/security'
+            );
+        }
+
+        // Stop PayPal first: once the account is gone nothing would tie the
+        // charges to anyone, and the artist would keep paying.
+        if (!SubscriptionService::cancelAllBilling($userId, 'Account deleted by the artist')) {
+            $this->failure(
+                'We could not cancel your PayPal subscription, so your account has not been deleted. Cancel it from your PayPal account or contact '
+                    . Config::get('app.support_email') . ', then try again.',
                 '/settings/security'
             );
         }

@@ -26,6 +26,14 @@ final class Url
             return self::$basePath = '/' . trim($configured, '/');
         }
 
+        // From the command line (cron, bin/ scripts) SCRIPT_NAME is the CLI
+        // script, not the front controller — take the path from APP_URL so
+        // links in emails and notifications point at the real site.
+        if (PHP_SAPI === 'cli') {
+            $path = rtrim((string) parse_url((string) Config::env('APP_URL', ''), PHP_URL_PATH), '/');
+            return self::$basePath = $path;
+        }
+
         $script = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
 
         // dirname() must be normalised *after* it runs: on Windows it returns
@@ -75,6 +83,26 @@ final class Url
         $host   = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
 
         return $scheme . '://' . $host . self::to($path, $query);
+    }
+
+    /**
+     * Turn a link built with Url::to() — which already carries the base path —
+     * into an absolute one for use outside the site, such as in an email.
+     */
+    public static function absoluteLink(string $link): string
+    {
+        if (preg_match('#^https?://#i', $link) === 1) {
+            return $link;
+        }
+
+        // Strip the base path this request was served under and hang the rest
+        // off APP_URL, so the link is right even when the two differ.
+        $base = self::basePath();
+        if ($base !== '' && str_starts_with($link, $base . '/')) {
+            $link = substr($link, strlen($base));
+        }
+
+        return self::absolute($link === '' ? '/' : $link);
     }
 
     /**

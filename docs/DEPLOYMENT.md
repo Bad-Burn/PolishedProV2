@@ -81,11 +81,25 @@ DB_USER=polishedpro_app    # NOT root
 DB_PASSWORD=<long random>
 
 TRUSTED_PROXY=false        # true ONLY behind a proxy you control
+
+SUPPORT_EMAIL=support@polishedpro.example
+
+MAIL_DRIVER=smtp
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_ENCRYPTION=tls
+MAIL_USERNAME=...
+MAIL_PASSWORD=...
+MAIL_FROM_ADDRESS=no-reply@polishedpro.example
+MAIL_FROM_NAME=PolishedPro
 ```
 
 `APP_DEBUG=false` matters: with it on, an uncaught exception prints a stack trace
-including file paths and query fragments. The kernel refuses to start if `APP_KEY`
-is unset or still the placeholder.
+including file paths and query fragments. With `APP_ENV=production` the kernel
+ignores `APP_DEBUG=true` anyway, refuses to start without `APP_URL`, and refuses
+to start if `APP_KEY` is unset or still the placeholder.
+
+Values containing `#` must be quoted — an unquoted ` #` starts a comment.
 
 ### Database user
 
@@ -185,19 +199,84 @@ Test the whole flow in `sandbox` mode before switching to `live`.
 
 ---
 
-## 7. Scheduled maintenance (optional)
+## 7. Email
 
-The app does opportunistic housekeeping when an admin loads the dashboard —
-auto-completing overdue bookings and expiring lapsed subscriptions — so it works
-without cron. On a busy site, a nightly job is tidier:
+Password reset, email confirmation, booking notices, appointment reminders and
+billing notices all go by email. With `MAIL_DRIVER=log` they are written to
+`storage/logs/mail.log` and **nobody receives anything** — fine on a laptop, a
+broken product in production.
 
-```cron
-0 3 * * * cd /var/www/polishedpro-v2 && php bin/maintenance.php >> storage/logs/cron.log 2>&1
-```
+Use any SMTP provider (Brevo, Postmark, Amazon SES, Mailgun). Then, in your DNS:
+
+- **SPF** and **DKIM** records for the sending domain, from the provider's setup page
+- a **DMARC** record, at least `v=DMARC1; p=none; rua=mailto:you@yourdomain`
+
+Without them, Gmail and Yahoo file the mail as spam or refuse it outright.
+
+Test it: request a password reset for your own account and check it arrives, and
+that the link in it opens the live site. Delivery failures are logged to
+`storage/logs/app.log` as `Email delivery failed`.
+
+Mail is sent after the response has gone to the browser when PHP runs under
+PHP-FPM, so a slow mail server never slows a page down. Under Apache's mod_php
+the request waits for the send — another reason to prefer PHP-FPM.
 
 ---
 
-## 8. Backups
+## 8. Scheduled jobs (required)
+
+Run the maintenance script **hourly**:
+
+```cron
+15 * * * * cd /var/www/polishedpro-v2 && php bin/maintenance.php >> storage/logs/cron.log 2>&1
+```
+
+It sends the day-before appointment reminders and the "your trial ends soon"
+emails — these are only ever sent from here, so without cron nobody gets them. It
+also auto-completes overdue bookings (which is what opens them for review),
+expires lapsed subscriptions, and purges expired tokens. Each reminder and warning
+is claimed in the database before it is sent, so overlapping runs never send one
+twice.
+
+---
+
+## 9. Logs
+
+`storage/logs/*.log` grow without limit. Rotate them:
+
+```
+# /etc/logrotate.d/polishedpro
+/var/www/polishedpro-v2/storage/logs/*.log {
+    weekly
+    rotate 12
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+Watch `app.log` for `ERROR` lines. Two need action the day they appear:
+
+- `Could not cancel a PayPal subscription` — an artist may be paying twice. Cancel
+  the named agreement in the PayPal dashboard.
+- `PayPal collected a payment on a retired subscription` — refund it in PayPal.
+
+Better still, point an uptime monitor at the home page and have errors emailed or
+sent to Sentry.
+
+---
+
+## 10. PHP settings
+
+- `memory_limit` of at least `256M`. Photo uploads raise it for themselves when a
+  large image needs more, but only where the host allows `ini_set`.
+- `upload_max_filesize = 6M` and `post_max_size = 8M` — the app accepts 5 MB images.
+- Run PHP-FPM rather than mod_php (see Email above).
+
+---
+
+## 11. Backups
 
 ```bash
 #!/usr/bin/env bash
@@ -224,18 +303,24 @@ remember-me token and session fingerprint becomes invalid.
 ## Pre-launch checklist
 
 - [ ] Document root points at `public/`; `/app/`, `/config/` and `/.env` return 403 or 404
-- [ ] `APP_DEBUG=false`
+- [ ] `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL` set to the public `https://` address
 - [ ] `APP_KEY` generated and backed up
 - [ ] Database user is not `root` and cannot `DROP`
 - [ ] HTTPS working, HTTP redirects to it
 - [ ] Demo accounts deleted
 - [ ] Admin account created, with two-factor authentication switched on
 - [ ] PayPal webhook registered and `PAYPAL_WEBHOOK_ID` set
+- [ ] Full PayPal cycle rehearsed in sandbox: subscribe during a trial, renewal, cancel, "Keep my plan", upgrade, failed payment
+- [ ] `MAIL_DRIVER=smtp`, SPF/DKIM/DMARC published, and a password reset email actually arrives
+- [ ] Hourly cron for `bin/maintenance.php` installed, and `cron.log` shows it running
+- [ ] Log rotation configured
 - [ ] `storage/logs` and `public/uploads` writable; nothing else is
 - [ ] A test upload lands in `uploads/` and does **not** execute
 - [ ] Backups scheduled and a restore rehearsed
 - [ ] Terms and Privacy pages replaced with reviewed text
 - [ ] `SUPPORT_EMAIL` set to an address someone actually reads
+- [ ] `/robots.txt` lists `Disallow` paths (not `Disallow: /`) and `/sitemap.xml` lists live artists
+- [ ] A first group of artists approved and live, so `/artists` is not empty on launch day
 
 ### Verify the document root is correct
 

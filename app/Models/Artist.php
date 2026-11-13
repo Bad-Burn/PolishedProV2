@@ -43,7 +43,10 @@ final class Artist
           LEFT JOIN subscriptions sub
                  ON sub.user_id = u.id
                 AND sub.status = "active"
-                AND (sub.current_period_end IS NULL OR sub.current_period_end > NOW())
+                AND (sub.current_period_end IS NULL
+                     OR sub.current_period_end > NOW()
+                     OR (sub.provider = "paypal" AND sub.cancel_at_period_end = 0
+                         AND sub.current_period_end > NOW() - INTERVAL ' . Subscription::RENEWAL_GRACE_DAYS . ' DAY))
           LEFT JOIN plans p ON p.id = sub.plan_id
     ';
 
@@ -68,13 +71,33 @@ final class Artist
                  WHERE sx.user_id = u.id
                    AND sx.status IN ("active", "past_due")
                    AND px.price_monthly > 0
-                   AND (sx.current_period_end IS NULL OR sx.current_period_end > NOW())
+                   AND (sx.current_period_end IS NULL
+                        OR sx.current_period_end > NOW()
+                        OR (sx.provider = "paypal" AND sx.cancel_at_period_end = 0
+                            AND sx.current_period_end > NOW() - INTERVAL ' . Subscription::RENEWAL_GRACE_DAYS . ' DAY))
             )
         )
     ';
 
     private const PUBLIC_WHERE = ' u.role = "artist" AND u.status = "active" AND u.approved_at IS NOT NULL AND '
         . self::HAS_ACCESS . ' ';
+
+    /**
+     * Every publicly visible profile, for the sitemap.
+     *
+     * @return array<int, array{slug:string, updated_at:string}>
+     */
+    public static function publicSlugs(): array
+    {
+        return Database::select(
+            'SELECT ap.slug, ap.updated_at
+               FROM users u
+               INNER JOIN artist_profiles ap ON ap.user_id = u.id
+              WHERE ' . self::PUBLIC_WHERE . '
+              ORDER BY ap.updated_at DESC
+              LIMIT 50000'
+        );
+    }
 
     /** @return array<string, mixed>|null */
     public static function findBySlug(string $slug): ?array

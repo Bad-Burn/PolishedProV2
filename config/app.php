@@ -38,6 +38,9 @@ return [
         'slot_interval_minutes' => 15,
         // Customers may cancel free of charge up to this point.
         'free_cancel_hours'     => 24,
+        // Upcoming bookings (pending or confirmed) one client may hold at once.
+        // Each one blocks its slot for everybody else.
+        'max_upcoming_per_client' => (int) Config::env('BOOKING_MAX_UPCOMING_PER_CLIENT', 5),
     ],
 
     'pagination' => [

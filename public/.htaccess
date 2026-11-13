@@ -39,4 +39,6 @@ Options -Indexes -MultiViews
     Header always set X-Content-Type-Options "nosniff"
 </IfModule>
 
-php_flag expose_php off
+<IfModule mod_php.c>
+    php_flag expose_php off
+</IfModule>

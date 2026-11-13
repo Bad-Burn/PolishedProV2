@@ -60,6 +60,8 @@ final class Uploader
             throw new ValidationException([$field => 'That image is too large to process.']);
         }
 
+        self::reserveMemoryFor($width * $height);
+
         $image = self::decode($tmp, $type);
         if ($image === null) {
             throw new ValidationException([$field => 'That image file appears to be damaged.']);
@@ -138,6 +140,35 @@ final class Uploader
     }
 
     /** Downscale so the longest edge is at most MAX_DIM, preserving transparency. */
+    /**
+     * GD holds the whole decoded bitmap in memory — about five bytes a pixel —
+     * plus the resized copy. A 48-megapixel phone photo needs ~250 MB, well
+     * past PHP's common 128M default, and running out is a fatal error the
+     * artist only sees as a blank 500. Raise the limit for this request when
+     * the image needs it; the 50-megapixel cap above bounds how far.
+     */
+    private static function reserveMemoryFor(int $pixels): void
+    {
+        $limit = trim((string) ini_get('memory_limit'));
+        if ($limit === '' || $limit === '-1') {
+            return;
+        }
+
+        $bytes = (int) $limit;
+        $bytes *= match (strtolower(substr($limit, -1))) {
+            'g'     => 1024 ** 3,
+            'm'     => 1024 ** 2,
+            'k'     => 1024,
+            default => 1,
+        };
+
+        $needed = memory_get_usage(true) + $pixels * 5 + 32 * 1024 ** 2;
+
+        if ($needed > $bytes) {
+            @ini_set('memory_limit', (string) ceil($needed / 1024 ** 2) . 'M');
+        }
+    }
+
     private static function constrain(\GdImage $image, int $width, int $height): \GdImage
     {
         $longest = max($width, $height);

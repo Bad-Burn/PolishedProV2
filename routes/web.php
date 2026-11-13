@@ -42,6 +42,10 @@ $router->get('/artists/{slug}/portfolio', [ArtistDirectoryController::class, 'po
 // Static content pages.
 $router->get('/{slug:help|terms|privacy}', [HomeController::class, 'page'])->name('page');
 
+// For search engines.
+$router->get('/robots.txt', [HomeController::class, 'robots']);
+$router->get('/sitemap.xml', [HomeController::class, 'sitemap']);
+
 // ---------------------------------------------------------------------------
 // Guest-only authentication
 // ---------------------------------------------------------------------------
@@ -65,14 +69,25 @@ $router->group('/', ['guest', 'throttle:20,10'], function ($router): void {
 
 $router->post('/logout', [AuthController::class, 'logout'])->name('logout');
 
+// Email confirmation: the link works signed in or out; resending needs a session.
+$router->get('/verify-email', [AuthController::class, 'verifyEmail'])->name('email.verify');
+$router->group('/', ['auth', 'throttle:3,15'], function ($router): void {
+    $router->post('/verify-email/resend', [AuthController::class, 'resendVerification']);
+});
+
 // ---------------------------------------------------------------------------
 // Booking (browsing is public, committing is not)
 // ---------------------------------------------------------------------------
 
 $router->get('/book/{service}', [BookingController::class, 'create'])->name('book');
 
-$router->group('/', ['auth', 'nocache'], function ($router): void {
+// Booking requests hold an artist's time, so they are throttled on top of the
+// per-account cap on open requests in BookingController::store().
+$router->group('/', ['auth', 'throttle:10,10'], function ($router): void {
     $router->post('/bookings', [BookingController::class, 'store'])->name('bookings.store');
+});
+
+$router->group('/', ['auth', 'nocache'], function ($router): void {
     $router->get('/bookings/{id}', [BookingController::class, 'show'])->name('bookings.show');
     $router->post('/bookings/{id}/status', [BookingController::class, 'updateStatus'])->name('bookings.status');
     $router->post('/bookings/{id}/review', [BookingController::class, 'review'])->name('bookings.review');

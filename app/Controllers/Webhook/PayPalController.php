@@ -11,6 +11,8 @@ use App\Core\Response;
 use App\Core\Url;
 use App\Models\Notification;
 use App\Models\Subscription;
+use App\Services\PayPalClient;
+use App\Services\SubscriptionService;
 
 /**
  * PayPal webhook receiver.
@@ -50,89 +52,169 @@ final class PayPalController extends Controller
         $eventType = (string) ($event['event_type'] ?? '');
         $resource  = is_array($event['resource'] ?? null) ? $event['resource'] : [];
 
+        if ($eventId === '' || $eventType === '') {
+            Response::json(['error' => 'Event id and type are required'], 400);
+        }
+
         // Idempotency: PayPal retries until it gets a 2xx.
-        if ($eventId !== '' && Subscription::eventAlreadyHandled($eventId)) {
+        if (Subscription::eventAlreadyHandled($eventId)) {
             Response::json(['status' => 'already processed']);
         }
 
-        $paypalSubId = (string) ($resource['id'] ?? $resource['billing_agreement_id'] ?? '');
+        $paypalSubId  = $this->subscriptionIdOf($eventType, $resource);
         $subscription = $paypalSubId !== '' ? Subscription::findByPaypalId($paypalSubId) : null;
 
-        Subscription::recordEvent(
+        if (!Subscription::claimEvent(
             $subscription === null ? null : (int) $subscription['id'],
             $eventType,
-            $eventId !== '' ? $eventId : null,
+            $eventId,
             $event
-        );
+        )) {
+            if (Subscription::eventAlreadyHandled($eventId)) {
+                Response::json(['status' => 'already processed']);
+            }
 
-        if ($subscription === null) {
-            // Nothing local to update — still a success as far as PayPal is
-            // concerned, so it stops retrying.
-            Logger::info('PayPal webhook for an unknown subscription', [
-                'event' => $eventType,
-                'sub'   => $paypalSubId,
-            ]);
-            Response::json(['status' => 'ignored']);
+            // A concurrent handler still owns this event. A non-2xx asks
+            // PayPal to retry if that handler fails before finishing.
+            Response::json(['error' => 'Event is being processed; retry shortly'], 503);
         }
 
-        $subscriptionId = (int) $subscription['id'];
-        $userId         = (int) $subscription['user_id'];
+        try {
+            if ($subscription === null) {
+                Logger::info('PayPal webhook for an unknown subscription', [
+                    'event' => $eventType,
+                    'sub'   => $paypalSubId,
+                ]);
+                Subscription::markEventProcessed($eventId);
+                Response::json(['status' => 'ignored']);
+            }
 
-        switch ($eventType) {
-            case 'BILLING.SUBSCRIPTION.ACTIVATED':
-                Subscription::activate(
-                    $subscriptionId,
-                    $this->timeOf($resource, ['billing_info', 'last_payment', 'time']) ?? date('Y-m-d H:i:s'),
-                    $this->timeOf($resource, ['billing_info', 'next_billing_time'])
-                );
-                $this->notify($userId, 'Your plan is active', 'Your listing limits and placement have been upgraded.');
-                break;
+            $subscriptionId = (int) $subscription['id'];
+            $userId         = (int) $subscription['user_id'];
 
-            case 'PAYMENT.SALE.COMPLETED':
-                // A renewal payment: roll the billing period forward.
-                $nextBilling = $this->timeOf($resource, ['billing_info', 'next_billing_time']);
-                if ($nextBilling === null) {
-                    $cycle = (string) $subscription['billing_cycle'];
-                    $nextBilling = date('Y-m-d H:i:s', strtotime($cycle === 'yearly' ? '+1 year' : '+1 month'));
-                }
-                Subscription::extendPeriod($subscriptionId, $nextBilling);
-                break;
+            switch ($eventType) {
+                case 'BILLING.SUBSCRIPTION.ACTIVATED':
+                    $activated = SubscriptionService::activate(
+                        $subscriptionId,
+                        $this->timeOf($resource, ['billing_info', 'last_payment', 'time']) ?? date('Y-m-d H:i:s'),
+                        $this->timeOf($resource, ['billing_info', 'next_billing_time'])
+                    );
+                    // The return handler usually got there first and said so.
+                    if ($activated && $subscription['status'] === 'pending') {
+                        $this->notify($userId, 'Your plan is active', 'Your listing limits and placement have been upgraded.');
+                    }
+                    break;
 
-            case 'BILLING.SUBSCRIPTION.PAYMENT.FAILED':
-                Subscription::setStatus($subscriptionId, 'past_due');
-                $this->notify(
-                    $userId,
-                    'Payment failed',
-                    'PayPal could not take your subscription payment. Update your payment method to keep your plan.',
-                    Url::to('/artist/subscription')
-                );
-                break;
+                case 'PAYMENT.SALE.COMPLETED':
+                    SubscriptionService::recordRenewal($subscription, $this->nextBillingAfterPayment($subscription));
+                    break;
 
-            case 'BILLING.SUBSCRIPTION.SUSPENDED':
-                Subscription::setStatus($subscriptionId, 'past_due');
-                $this->notify($userId, 'Your plan is paused', 'Your subscription has been suspended at PayPal.');
-                break;
+                case 'BILLING.SUBSCRIPTION.PAYMENT.FAILED':
+                    Subscription::setStatus($subscriptionId, 'past_due');
+                    $this->notify(
+                        $userId,
+                        'Payment failed',
+                        'PayPal could not take your subscription payment. Update your payment method to keep your plan.',
+                        Url::to('/artist/subscription')
+                    );
+                    break;
 
-            case 'BILLING.SUBSCRIPTION.CANCELLED':
-                Subscription::setStatus($subscriptionId, 'cancelled');
-                $this->notify(
-                    $userId,
-                    'Your plan was cancelled',
-                    'Your subscription has ended. Your profile is hidden from search until you subscribe again — nothing has been deleted.'
-                );
-                break;
+                case 'BILLING.SUBSCRIPTION.SUSPENDED':
+                    Subscription::setStatus($subscriptionId, 'past_due');
+                    $this->notify($userId, 'Your plan is paused', 'Your subscription has been suspended at PayPal.');
+                    break;
 
-            case 'BILLING.SUBSCRIPTION.EXPIRED':
-                Subscription::setStatus($subscriptionId, 'expired');
-                $this->notify($userId, 'Your plan expired', 'Renew any time to restore your listing limits.');
-                break;
+                case 'BILLING.SUBSCRIPTION.CANCELLED':
+                    // Already retired by an upgrade: we cancelled it ourselves and
+                    // the artist is on their new plan. Nothing to tell them.
+                    if ($subscription['status'] === 'cancelled') {
+                        break;
+                    }
 
-            default:
-                Logger::info('Unhandled PayPal event', ['event' => $eventType]);
-                break;
+                    Subscription::markCancelled($subscriptionId);
+                    $after = Subscription::find($subscriptionId);
+
+                    if ($after !== null && in_array($after['status'], ['active', 'past_due'], true) && !empty($after['current_period_end'])) {
+                        $this->notify(
+                            $userId,
+                            'Your plan will not renew',
+                            'You keep everything until ' . date_label((string) $after['current_period_end'], 'F j')
+                                . '. After that your profile is hidden until you subscribe again — nothing is deleted.'
+                        );
+                    } else {
+                        $this->notify(
+                            $userId,
+                            'Your plan was cancelled',
+                            'Your subscription has ended. Your profile is hidden from search until you subscribe again — nothing has been deleted.'
+                        );
+                    }
+                    break;
+
+                case 'BILLING.SUBSCRIPTION.EXPIRED':
+                    Subscription::setStatus($subscriptionId, 'expired');
+                    $this->notify($userId, 'Your plan expired', 'Renew any time to restore your listing limits.');
+                    break;
+
+                default:
+                    Logger::info('Unhandled PayPal event', ['event' => $eventType]);
+                    break;
+            }
+
+            Subscription::markEventProcessed($eventId);
+        } catch (\Throwable $e) {
+            try {
+                Subscription::markEventFailed($eventId);
+            } catch (\Throwable $markError) {
+                Logger::error('Could not release failed PayPal webhook claim: ' . $markError->getMessage(), [
+                    'event_id' => $eventId,
+                ]);
+            }
+            throw $e;
         }
 
         Response::json(['status' => 'ok']);
+    }
+
+    /**
+     * Which PayPal subscription an event is about.
+     *
+     * Subscription events carry the subscription itself, so its id is
+     * `resource.id`. Sale events carry the *payment* — there `resource.id` is
+     * the sale, and the subscription is `billing_agreement_id`. Reading the
+     * wrong one silently drops every renewal.
+     */
+    private function subscriptionIdOf(string $eventType, array $resource): string
+    {
+        if (str_starts_with($eventType, 'PAYMENT.SALE.')) {
+            return (string) ($resource['billing_agreement_id'] ?? '');
+        }
+
+        return (string) ($resource['id'] ?? '');
+    }
+
+    /**
+     * When the period paid for by this sale ends. The sale itself does not say,
+     * so ask PayPal; if that fails, count one cycle on from the period that was
+     * just paid for — not from today, or a late webhook would shorten it.
+     */
+    private function nextBillingAfterPayment(array $subscription): string
+    {
+        try {
+            $remote = PayPalClient::getSubscription((string) $subscription['paypal_subscription_id']);
+            $next   = $this->timeOf($remote, ['billing_info', 'next_billing_time']);
+            if ($next !== null) {
+                return $next;
+            }
+        } catch (\Throwable $e) {
+            Logger::warning('Could not read next billing time from PayPal: ' . $e->getMessage(), [
+                'subscription_id' => $subscription['id'],
+            ]);
+        }
+
+        $from  = !empty($subscription['current_period_end']) ? (string) $subscription['current_period_end'] : 'now';
+        $cycle = (string) $subscription['billing_cycle'] === 'yearly' ? '+1 year' : '+1 month';
+
+        return date('Y-m-d H:i:s', (int) strtotime($cycle, (int) strtotime($from)));
     }
 
     /**

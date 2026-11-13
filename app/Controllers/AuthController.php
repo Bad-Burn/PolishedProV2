@@ -23,6 +23,8 @@ use App\Models\Notification;
 use App\Models\PasswordReset;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\EmailVerification;
+use App\Services\Emails;
 
 final class AuthController extends Controller
 {
@@ -113,6 +115,7 @@ final class AuthController extends Controller
         }
 
         Auth::login($user);
+        EmailVerification::send($user);
 
         if ($role === 'artist') {
             Notification::push(
@@ -137,7 +140,7 @@ final class AuthController extends Controller
             Url::to('/artists')
         );
 
-        $this->success('Welcome to PolishedPro.', '/artists');
+        $this->success('Welcome to PolishedPro. We sent a confirmation link to ' . $user['email'] . ' — confirm it before you book.', '/artists');
     }
 
     // -- Login --------------------------------------------------------------
@@ -310,6 +313,48 @@ final class AuthController extends Controller
         $this->redirect('/');
     }
 
+    // -- Email verification -------------------------------------------------
+
+    /**
+     * The link from the verification email. Works signed in or not, since
+     * people often open mail on a different device from the one they used.
+     */
+    public function verifyEmail(Request $request): never
+    {
+        $userId = EmailVerification::verify((string) $request->query('token', ''));
+
+        if ($userId === null) {
+            $this->failure(
+                'That confirmation link has expired or is no longer valid. Sign in and we will send you a new one.',
+                Auth::check() ? '/settings' : '/login'
+            );
+        }
+
+        AuditLog::record('user.email_verified', 'user', $userId, [], $userId);
+
+        if (Auth::id() === $userId) {
+            Auth::refresh();
+            Session::flash('success', 'Thanks — your email address is confirmed.');
+            \App\Core\Response::redirect(Auth::homeFor(Auth::role()));
+        }
+
+        $this->success('Thanks — your email address is confirmed. Sign in to carry on.', '/login');
+    }
+
+    public function resendVerification(Request $request): never
+    {
+        $user = Auth::user();
+
+        if ($user === null || EmailVerification::isVerified($user)) {
+            $this->back();
+        }
+
+        EmailVerification::send($user);
+
+        Session::flash('success', 'We sent a new confirmation link to ' . $user['email'] . '.');
+        $this->back();
+    }
+
     // -- Password reset -----------------------------------------------------
 
     public function showForgotPassword(Request $request): never
@@ -338,10 +383,11 @@ final class AuthController extends Controller
             $token = PasswordReset::issue((int) $user['id']);
             $link  = Url::absolute('/reset-password', ['token' => $token]);
 
-            // Sending email needs SMTP that a fresh XAMPP install does not have.
-            // The link is logged so it is recoverable, and shown on screen in
-            // debug mode only — never in production.
-            Logger::info('Password reset link generated', ['user_id' => $user['id'], 'link' => $link]);
+            Emails::passwordReset($user, $link);
+
+            // The link itself is a credential for the next hour, so it is
+            // never logged. In debug mode it is also shown on screen below.
+            Logger::info('Password reset link sent', ['user_id' => $user['id']]);
 
             Notification::push(
                 (int) $user['id'],

@@ -5,12 +5,23 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Core\Database;
+use App\Services\Emails;
 
 final class Notification
 {
+    /**
+     * Notification types that also go out by email, matched by prefix.
+     *
+     * Anything someone has to act on or turn up for. The welcome message is
+     * left out (the verification email does that job), and so is the
+     * "password reset requested" notice — the reset email itself is the
+     * warning, and a second one would only add noise.
+     */
+    private const EMAILED = ['booking.', 'subscription', 'account.approved', 'review.received'];
+
     public static function push(int $userId, string $type, string $title, ?string $body = null, ?string $link = null): int
     {
-        return Database::insert(
+        $id = Database::insert(
             'INSERT INTO notifications (user_id, type, title, body, link) VALUES (:u, :t, :title, :body, :link)',
             [
                 'u'     => $userId,
@@ -20,6 +31,29 @@ final class Notification
                 'link'  => $link,
             ]
         );
+
+        if (self::isEmailed($type)) {
+            $user = Database::selectOne(
+                'SELECT email, full_name FROM users WHERE id = :u AND status = "active" LIMIT 1',
+                ['u' => $userId]
+            );
+            if ($user !== null) {
+                Emails::notification($user, $title, $body, $link);
+            }
+        }
+
+        return $id;
+    }
+
+    private static function isEmailed(string $type): bool
+    {
+        foreach (self::EMAILED as $prefix) {
+            if (str_starts_with($type, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array<int, array<string, mixed>> */

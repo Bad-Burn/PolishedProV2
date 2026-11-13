@@ -19,6 +19,13 @@ final class Kernel
         Config::loadEnv(PP_ROOT . DIRECTORY_SEPARATOR . '.env');
         Config::load(PP_ROOT . DIRECTORY_SEPARATOR . 'config');
 
+        // Debug output on a live site prints file paths and query fragments to
+        // anyone who can trigger an error. Production wins over the flag.
+        if (Config::get('app.env') === 'production' && Config::get('app.debug')) {
+            Config::set('app.debug', false);
+            Logger::warning('APP_DEBUG=true ignored because APP_ENV=production');
+        }
+
         $debug = (bool) Config::get('app.debug', false);
 
         // Errors are always logged; they are only *displayed* in debug mode.
@@ -32,6 +39,25 @@ final class Kernel
         setlocale(LC_ALL, 'en_US.UTF-8');
 
         self::assertAppKey();
+        self::assertAppUrl();
+    }
+
+    /**
+     * Emails, PayPal return links and the sitemap are absolute URLs. Without
+     * APP_URL they fall back to the request's Host header, which the client
+     * chooses — fine on a laptop, a phishing vector in production.
+     */
+    private static function assertAppUrl(): void
+    {
+        if (Config::get('app.env') !== 'production' || (string) Config::get('app.url', '') !== '') {
+            return;
+        }
+
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "PolishedPro is not configured.\n\n";
+        echo "Set APP_URL in your .env file to the site's public address, e.g. https://polishedpro.ph\n";
+        exit;
     }
 
     /**

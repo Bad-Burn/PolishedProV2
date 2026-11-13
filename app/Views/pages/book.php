@@ -43,6 +43,8 @@ $isGuest = Auth::guest();
                         <a href="<?= e(url('/register')) ?>">create an account</a> when you are ready.
                     </span>
                 </div>
+            <?php else: ?>
+                <?= view_partial('verify-email-notice') ?>
             <?php endif; ?>
 
             <form method="post" action="<?= e(url('/bookings')) ?>" id="booking-form" data-once>

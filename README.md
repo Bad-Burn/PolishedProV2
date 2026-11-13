@@ -196,6 +196,22 @@ PayPal's side never reach the app — and the app rejects unsigned webhooks outr
 Until PayPal is configured the billing screens degrade gracefully: plans are shown for
 reference, and an admin can grant a plan manually from **Admin → Subscriptions**.
 
+An artist who subscribes mid-trial, or clicks **Keep my plan** after cancelling, is not
+charged until the time they already have runs out. Upgrading takes effect at once and
+cancels the old PayPal agreement, so nobody pays for two plans.
+
+---
+
+## Email
+
+Password reset, email confirmation, booking notices, day-before reminders and billing
+notices all go by email. Locally `MAIL_DRIVER=log` writes them to
+`storage/logs/mail.log` — open it to click the links. In production set
+`MAIL_DRIVER=smtp` and the `MAIL_*` settings for any SMTP provider; see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#7-email).
+
+Clients must confirm their email address before they can book.
+
 ---
 
 ## Docs
@@ -204,7 +220,23 @@ reference, and an admin can grant a plan manually from **Admin → Subscriptions
 |---|---|
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, every control, and what changed from v1 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Going live, hardening checklist, backups |
+| [docs/LAUNCH_RUNBOOK.md](docs/LAUNCH_RUNBOOK.md) | Step-by-step production setup and manual launch gates |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit, and why |
+
+### Browser smoke checks
+
+On a local or staging copy with a migrated database, install Playwright's
+Chromium browser once and run the smoke checks:
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
+
+These checks cover public page rendering, the sign-in form, security headers,
+asset delivery, and the document-root boundary. They do not replace the live
+email, PayPal, upload, backup-restore, or legal review steps in the launch runbook.
 
 ---
 
@@ -219,6 +251,7 @@ php bin/seed.php                # reference data + demo dataset
 php bin/seed.php --reference    # reference data only
 php bin/admin.php               # create or promote an administrator
 php bin/paypal-plans.php        # create PayPal billing plans
+php bin/maintenance.php         # hourly: reminders, trial warnings, housekeeping
 php bin/showcase.php <img> <name>   # rebuild a landing-page hero photo
 ```
 

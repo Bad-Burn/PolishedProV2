@@ -36,3 +36,15 @@ test('application internals are not served from the public document root', async
     expect(response.status(), `${path} should not be public`).toBeGreaterThanOrEqual(400);
   }
 });
+
+test('PayPal webhook rejects an unsigned activation event', async ({ request }) => {
+  const response = await request.post('/webhooks/paypal', {
+    data: {
+      id: 'unsigned-test-event',
+      event_type: 'BILLING.SUBSCRIPTION.ACTIVATED',
+      resource: { id: 'I-UNSIGNEDTEST' },
+    },
+  });
+
+  expect(response.status()).toBe(401);
+});

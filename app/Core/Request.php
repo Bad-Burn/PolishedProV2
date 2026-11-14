@@ -199,12 +199,13 @@ final class Request
     }
 
     /**
-     * Client IP. Proxy headers are only trusted when TRUSTED_PROXY is enabled,
-     * since they are attacker-controlled on a direct connection.
+     * Client IP. Forwarded headers are used only when the direct peer matches
+     * TRUSTED_PROXY_IPS. This prevents a direct client from spoofing the proxy
+     * headers even if the deployment has proxy support enabled.
      */
     public function ip(): string
     {
-        if (Config::env('TRUSTED_PROXY', false) === true) {
+        if ($this->forwardedHeadersAreTrusted()) {
             // Cloudflare states the visitor's address outright.
             $cloudflare = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '';
             if (is_string($cloudflare) && filter_var($cloudflare, FILTER_VALIDATE_IP)) {
@@ -239,9 +240,40 @@ final class Request
         if (($_SERVER['HTTPS'] ?? 'off') !== 'off' && !empty($_SERVER['HTTPS'])) {
             return true;
         }
-        if (Config::env('TRUSTED_PROXY', false) === true) {
-            return strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+        if ($this->forwardedHeadersAreTrusted()) {
+            // Proxies such as ngrok append their own value. Trust the final hop,
+            // not a client-supplied value earlier in the list.
+            $forwarded = (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '');
+            $hops = array_map('trim', explode(',', $forwarded));
+            return strtolower((string) end($hops)) === 'https';
         }
         return (int) ($_SERVER['SERVER_PORT'] ?? 80) === 443;
+    }
+
+    /** Trust forwarded headers only from explicitly listed proxy peers. */
+    private function forwardedHeadersAreTrusted(): bool
+    {
+        if (Config::env('TRUSTED_PROXY', false) !== true) {
+            return false;
+        }
+
+        $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        if (filter_var($remote, FILTER_VALIDATE_IP) === false) {
+            return false;
+        }
+
+        $configured = Config::env('TRUSTED_PROXY_IPS', '127.0.0.1,::1');
+        if (!is_string($configured) || trim($configured) === '') {
+            return false;
+        }
+
+        foreach (explode(',', $configured) as $trustedIp) {
+            $trustedIp = trim($trustedIp);
+            if (filter_var($trustedIp, FILTER_VALIDATE_IP) !== false && hash_equals($trustedIp, $remote)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

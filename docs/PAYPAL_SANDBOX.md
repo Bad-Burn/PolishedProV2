@@ -43,29 +43,38 @@ This CLI-only command refuses to make API calls unless `PAYPAL_MODE=sandbox`. It
 
 The app reads the plan ID from the database row. Do not manually copy a plan ID into an unrelated plan or change the Premium price in the database.
 
-## 3. Expose the local webhook over HTTPS
+## 3. Serve only this app locally, then expose it over HTTPS
 
-PayPal cannot send webhooks to `localhost`. Start a temporary HTTPS tunnel to the XAMPP Apache server. For example, with ngrok:
+PayPal cannot send webhooks to `localhost`. The current `.env` points at `http://localhost/polishedpro-v2/public`, but that path currently returns 404: XAMPP Apache serves `C:\xampp\htdocs`, while this checkout is in `D:\workspace - Copy\polishedpro-v2`. Also, tunneling port 80 would expose every site in Apache's document root. Use the XAMPP PHP development server bound to loopback so only this app is reachable through the tunnel.
+
+Open a terminal in the project root and start the local app:
 
 ```powershell
-ngrok http 80
+C:\xampp\php\php.exe -S 127.0.0.1:8765 -t public bin/router.php
 ```
 
-Use the HTTPS forwarding hostname shown by ngrok. If your local app URL is `http://localhost/polishedpro-v2/public`, set the corresponding tunnel URL in `.env`, keeping the same path:
+Confirm `http://127.0.0.1:8765/help` loads. Keep this terminal open. After approval to expose the app, open a second terminal and run:
+
+```powershell
+ngrok http 8765
+```
+
+Use the HTTPS forwarding hostname ngrok displays. The public app is at its root, with no `/polishedpro-v2/public` suffix. Update the local `.env`:
 
 ```dotenv
-APP_URL=https://your-current-ngrok-host/polishedpro-v2/public
+APP_URL=https://your-current-ngrok-host
 TRUSTED_PROXY=true
+TRUSTED_PROXY_IPS=127.0.0.1,::1
 ```
 
-`TRUSTED_PROXY=true` is appropriate only while requests reach the app through your tunnel or another trusted reverse proxy. Revert it when the tunnel is stopped and the app is accessed directly. The temporary tunnel hostname changes when the tunnel restarts, so update `APP_URL` and the PayPal webhook URL each time.
+The app honors forwarded headers only when the connecting peer matches `TRUSTED_PROXY_IPS`. Ngrok appends the originating client values, and `Request` reads the last `X-Forwarded-For` and `X-Forwarded-Proto` hops. Keep the allowlist limited to verified proxy peer IPs. Revert to `TRUSTED_PROXY=false` when the tunnel is stopped and the app is accessed directly. The temporary tunnel hostname changes when the tunnel restarts, so update `APP_URL` and the PayPal webhook URL each time.
 
 ## 4. Register the PayPal webhook
 
-In the same Sandbox REST app, add this endpoint:
+In the PayPal Developer Dashboard, open **Apps & Credentials → Sandbox → PolishedProV2 → Webhooks → Add Webhook**. Add this endpoint:
 
 ```text
-https://your-current-ngrok-host/polishedpro-v2/public/webhooks/paypal
+https://your-current-ngrok-host/webhooks/paypal
 ```
 
 Subscribe to:
@@ -79,7 +88,7 @@ Subscribe to:
 - `PAYMENT.SALE.REFUNDED`
 - `PAYMENT.SALE.REVERSED`
 
-Copy the webhook ID PayPal returns into `PAYPAL_WEBHOOK_ID`. The app verifies each webhook with PayPal before changing billing records. Failed webhook work returns a retryable response; duplicate event IDs are processed once.
+Save the webhook, then copy its generated **Webhook ID** into `PAYPAL_WEBHOOK_ID` in `.env`. Do not use the Client ID in this setting. The app verifies each webhook with PayPal before changing billing records. Failed webhook work returns a retryable response; duplicate event IDs are processed once.
 
 ## 5. Run a Sandbox checkout
 
@@ -121,3 +130,5 @@ The Sandbox account must support PayPal Subscriptions. PayPal's current Subscrip
 - [Subscription webhook events](https://developer.paypal.com/subscriptions/webhooks/)
 - [Webhook signature verification](https://developer.paypal.com/api/rest/webhooks/)
 - [JavaScript SDK CSP and COOP guidance](https://developer.paypal.com/sdk/js/v5/best-practices/)
+- [ngrok for Windows](https://ngrok.com/download/windows)
+- [ngrok forwarded headers](https://ngrok.com/docs/gateway/endpoints/http)

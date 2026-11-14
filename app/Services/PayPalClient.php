@@ -299,6 +299,9 @@ final class PayPalClient
         $fixedPrice = $cycle['pricing_scheme']['fixed_price'] ?? [];
         $preferences = $plan['payment_preferences'] ?? [];
         $setupFee = $preferences['setup_fee'] ?? ['value' => '0.00', 'currency_code' => 'PHP'];
+        $actualPrice = $fixedPrice['value'] ?? null;
+        $priceMatches = is_numeric($actualPrice)
+            && number_format((float) $actualPrice, 2, '.', '') === number_format((float) $price, 2, '.', '');
 
         return count($plan['billing_cycles'] ?? []) === 1
             && ($plan['product_id'] ?? '') === $productId
@@ -308,10 +311,12 @@ final class PayPalClient
             && (int) ($frequency['interval_count'] ?? 0) === 1
             && ($cycle['tenure_type'] ?? '') === 'REGULAR'
             && (int) ($cycle['total_cycles'] ?? -1) === 0
-            && (string) ($fixedPrice['value'] ?? '') === number_format((float) $price, 2, '.', '')
+            // PayPal may serialize the same amount as "149.0" or "149.00".
+            && $priceMatches
             && ($fixedPrice['currency_code'] ?? '') === 'PHP'
             && !empty($preferences['auto_bill_outstanding'])
             && (int) ($preferences['payment_failure_threshold'] ?? 0) === 1
+            && ($preferences['setup_fee_failure_action'] ?? '') === 'CONTINUE'
             && (float) ($setupFee['value'] ?? 0) === 0.0
             && ($setupFee['currency_code'] ?? 'PHP') === 'PHP';
     }

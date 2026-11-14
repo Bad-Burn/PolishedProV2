@@ -51,8 +51,7 @@ final class Subscription
      */
     public static function periodLiveSql(string $alias): string
     {
-        return "({$alias}.current_period_end IS NULL
-                 OR {$alias}.current_period_end > NOW()
+        return "({$alias}.current_period_end > NOW()
                  OR ({$alias}.provider = 'paypal'
                      AND {$alias}.cancel_at_period_end = 0
                      AND {$alias}.current_period_end > NOW() - INTERVAL " . self::RENEWAL_GRACE_DAYS . ' DAY))';
@@ -154,6 +153,8 @@ final class Subscription
         $plan['subscription_status'] = (string) $subscription['status'];
         $plan['billing_cycle']       = (string) $subscription['billing_cycle'];
         $plan['current_period_end']  = $subscription['current_period_end'];
+        $plan['last_successful_payment_at'] = $subscription['last_successful_payment_at'] ?? null;
+        $plan['paypal_plan_id']      = $subscription['paypal_plan_id'] ?? null;
         $plan['cancel_at_period_end']= (int) $subscription['cancel_at_period_end'];
         $plan['provider']            = (string) $subscription['provider'];
 
@@ -238,17 +239,32 @@ final class Subscription
      * Record an intent to subscribe before sending the artist to PayPal. The
      * row stays `pending` until the webhook (or the return handler) confirms it.
      */
-    public static function createPending(int $userId, int $planId, string $cycle, ?string $paypalId = null): int
+    public static function createPending(int $userId, int $planId, string $cycle, ?string $paypalId = null, ?string $paypalPlanId = null): int
     {
         return Database::insert(
-            'INSERT INTO subscriptions (user_id, plan_id, status, billing_cycle, provider, paypal_subscription_id)
-             VALUES (:u, :p, "pending", :c, "paypal", :pid)',
+            'INSERT INTO subscriptions (user_id, plan_id, status, billing_cycle, provider, paypal_subscription_id, paypal_plan_id)
+             VALUES (:u, :p, "pending", :c, "paypal", :pid, :ppid)',
             [
                 'u'   => $userId,
                 'p'   => $planId,
                 'c'   => $cycle === 'yearly' ? 'yearly' : 'monthly',
                 'pid' => $paypalId,
+                'ppid' => $paypalPlanId,
             ]
+        );
+    }
+
+    public static function recordSuccessfulPaymentMetadata(int $id, string $paypalPlanId, string $paidAt): void
+    {
+        Database::affectingStatement(
+            'UPDATE subscriptions
+                SET paypal_plan_id = COALESCE(paypal_plan_id, :plan),
+                    last_successful_payment_at = CASE
+                        WHEN last_successful_payment_at IS NULL OR last_successful_payment_at < :paid1 THEN :paid2
+                        ELSE last_successful_payment_at
+                    END
+              WHERE id = :id',
+            ['plan' => $paypalPlanId, 'paid1' => $paidAt, 'paid2' => $paidAt, 'id' => $id]
         );
     }
 
@@ -258,6 +274,26 @@ final class Subscription
         return Database::selectOne(
             'SELECT * FROM subscriptions WHERE paypal_subscription_id = :id LIMIT 1',
             ['id' => $paypalSubscriptionId]
+        );
+    }
+
+    /** Signed PayPal custom_id tying a browser-created subscription to this account. */
+    public static function paypalCustomerReference(int $userId): string
+    {
+        $key = (string) Config::get('app.key', '');
+        if ($userId < 1 || strlen($key) < 32) {
+            throw new \RuntimeException('A valid APP_KEY is required for PayPal subscription ownership checks.');
+        }
+
+        return 'ppv1:' . $userId . ':' . hash_hmac('sha256', 'paypal-subscription|' . $userId, $key);
+    }
+
+    /** @return array<string, mixed>|null */
+    public static function findByIdForUser(int $id, int $userId): ?array
+    {
+        return Database::selectOne(
+            'SELECT * FROM subscriptions WHERE id = :id AND user_id = :u LIMIT 1',
+            ['id' => $id, 'u' => $userId]
         );
     }
 
@@ -374,6 +410,33 @@ final class Subscription
                     END,
                     cancel_at_period_end = 1,
                     cancelled_at = COALESCE(cancelled_at, NOW())
+              WHERE id = :id',
+            ['id' => $id]
+        );
+    }
+
+    /** Immediately revoke a refunded/reversed billing period. */
+    public static function revokeForPaymentReversal(int $id): void
+    {
+        Database::affectingStatement(
+            'UPDATE subscriptions
+                SET status = "cancelled", cancel_at_period_end = 1,
+                    current_period_end = LEAST(COALESCE(current_period_end, NOW()), NOW()),
+                    cancelled_at = COALESCE(cancelled_at, NOW())
+              WHERE id = :id',
+            ['id' => $id]
+        );
+    }
+
+    /** Keep an unpaid pending agreement from being promoted to access-granting past_due. */
+    public static function markPaymentFailure(int $id): void
+    {
+        Database::affectingStatement(
+            'UPDATE subscriptions
+                SET status = CASE
+                    WHEN status IN ("active", "past_due") AND current_period_end > NOW() THEN "past_due"
+                    ELSE "pending"
+                END
               WHERE id = :id',
             ['id' => $id]
         );

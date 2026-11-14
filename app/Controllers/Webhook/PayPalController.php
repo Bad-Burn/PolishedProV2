@@ -10,9 +10,11 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\Url;
 use App\Models\Notification;
+use App\Models\Payment;
+use App\Models\Plan;
 use App\Models\Subscription;
 use App\Services\PayPalClient;
-use App\Services\SubscriptionService;
+use App\Services\PayPalSubscriptionPaymentService;
 
 /**
  * PayPal webhook receiver.
@@ -63,6 +65,14 @@ final class PayPalController extends Controller
 
         $paypalSubId  = $this->subscriptionIdOf($eventType, $resource);
         $subscription = $paypalSubId !== '' ? Subscription::findByPaypalId($paypalSubId) : null;
+        if ($subscription === null && str_starts_with($eventType, 'PAYMENT.SALE.')) {
+            $saleId = (string) ($resource['sale_id'] ?? $resource['id'] ?? '');
+            $payment = Payment::findByPaypalTransaction($saleId);
+            if ($payment !== null) {
+                $subscription = Subscription::find((int) $payment['subscription_id']);
+                $paypalSubId = (string) ($subscription['paypal_subscription_id'] ?? '');
+            }
+        }
 
         if (!Subscription::claimEvent(
             $subscription === null ? null : (int) $subscription['id'],
@@ -91,26 +101,31 @@ final class PayPalController extends Controller
 
             $subscriptionId = (int) $subscription['id'];
             $userId         = (int) $subscription['user_id'];
+            $remote = PayPalClient::getSubscription((string) $subscription['paypal_subscription_id']);
+            PayPalSubscriptionPaymentService::assertRemoteMatchesLocal($subscription, $remote, false);
 
             switch ($eventType) {
                 case 'BILLING.SUBSCRIPTION.ACTIVATED':
-                    $activated = SubscriptionService::activate(
-                        $subscriptionId,
-                        $this->timeOf($resource, ['billing_info', 'last_payment', 'time']) ?? date('Y-m-d H:i:s'),
-                        $this->timeOf($resource, ['billing_info', 'next_billing_time'])
-                    );
-                    // The return handler usually got there first and said so.
-                    if ($activated && $subscription['status'] === 'pending') {
-                        $this->notify($userId, 'Your plan is active', 'Your listing limits and placement have been upgraded.');
-                    }
+                    // Approval/activation is not proof of a successful first charge.
+                    // PAYMENT.SALE.COMPLETED is the only event that grants access.
                     break;
 
                 case 'PAYMENT.SALE.COMPLETED':
-                    SubscriptionService::recordRenewal($subscription, $this->nextBillingAfterPayment($subscription));
+                    PayPalSubscriptionPaymentService::recordCompletedSale($subscription, $resource, $eventId, $remote);
                     break;
 
                 case 'BILLING.SUBSCRIPTION.PAYMENT.FAILED':
-                    Subscription::setStatus($subscriptionId, 'past_due');
+                    $plan = Plan::find((int) $subscription['plan_id']);
+                    $money = PayPalSubscriptionPaymentService::moneyOf($resource);
+                    Payment::recordFailedAttempt(
+                        $userId,
+                        $subscriptionId,
+                        $eventId,
+                        (float) ($money['amount'] ?? ($plan === null ? 0 : Plan::priceFor($plan, (string) $subscription['billing_cycle']))),
+                        (string) ($money['currency'] ?? ($plan['currency'] ?? 'PHP')),
+                        $this->timeOf($resource, ['billing_info', 'last_failed_payment', 'time'])
+                    );
+                    Subscription::markPaymentFailure($subscriptionId);
                     $this->notify(
                         $userId,
                         'Payment failed',
@@ -120,8 +135,41 @@ final class PayPalController extends Controller
                     break;
 
                 case 'BILLING.SUBSCRIPTION.SUSPENDED':
-                    Subscription::setStatus($subscriptionId, 'past_due');
+                    Subscription::markPaymentFailure($subscriptionId);
                     $this->notify($userId, 'Your plan is paused', 'Your subscription has been suspended at PayPal.');
+                    break;
+
+                case 'PAYMENT.SALE.REFUNDED':
+                case 'PAYMENT.SALE.REVERSED':
+                    $saleId = (string) ($resource['sale_id'] ?? $resource['id'] ?? '');
+                    if ($saleId === '') {
+                        throw new \RuntimeException('PayPal refund/reversal did not include the original sale ID.');
+                    }
+                    $money = PayPalSubscriptionPaymentService::moneyOf($resource);
+                    $plan = Plan::find((int) $subscription['plan_id']);
+                    $paymentStatus = $eventType === 'PAYMENT.SALE.REVERSED' ? 'reversed' : 'refunded';
+                    Payment::markSaleStatus(
+                        $userId,
+                        $subscriptionId,
+                        $saleId,
+                        $eventId,
+                        $paymentStatus,
+                        (float) ($money['amount'] ?? ($plan === null ? 0 : Plan::priceFor($plan, (string) $subscription['billing_cycle']))),
+                        (string) ($money['currency'] ?? ($plan['currency'] ?? 'PHP')),
+                        $this->timeOf($resource, ['update_time']) ?? $this->timeOf($resource, ['create_time'])
+                    );
+                    Subscription::revokeForPaymentReversal($subscriptionId);
+                    try {
+                        if (!PayPalClient::cancelSubscription((string) $subscription['paypal_subscription_id'], 'Subscription payment was refunded or reversed')) {
+                            Logger::error('PayPal did not confirm cancellation after a refund/reversal', ['subscription_id' => $subscriptionId]);
+                        }
+                    } catch (\Throwable $e) {
+                        Logger::error('Could not cancel PayPal subscription after a refund/reversal', [
+                            'subscription_id' => $subscriptionId,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                    $this->notify($userId, 'Subscription payment reversed', 'The refunded or reversed billing period was removed. Your subscription will not renew.');
                     break;
 
                 case 'BILLING.SUBSCRIPTION.CANCELLED':

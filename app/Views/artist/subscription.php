@@ -1,17 +1,26 @@
 <?php
 /**
- * @var array<int, array<string, mixed>> $plans, $history
+ * @var array<int, array<string, mixed>> $plans, $history, $payments
  * @var array<string, mixed> $current, $plan
  * @var array<string, mixed>|null $subscription
  * @var string $cycle
  * @var array{allowed:bool, used:int, limit:?int, message:?string} $allowance, $portfolioAllowance
  * @var bool $paypalReady, $sandbox
  * @var int $usedSlots
+ * @var array<string, mixed> $paypalPremium
  */
 
 declare(strict_types=1);
 
 layout('dashboard');
+
+if (!empty($paypalPremium['ready']) && $cycle === 'monthly') {
+    section('head');
+    ?>
+    <script nonce="<?= e(\App\Core\Response::cspNonce()) ?>" data-csp-nonce="<?= e(\App\Core\Response::cspNonce()) ?>" src="https://www.paypal.com/sdk/js?client-id=<?= e((string) $paypalPremium['client_id']) ?>&amp;currency=PHP&amp;vault=true&amp;intent=subscription&amp;components=buttons" defer></script>
+    <?php
+    end_section();
+}
 
 section('sidebar');
 echo view_partial('sidebar-artist', ['plan' => $plan, 'usedSlots' => $usedSlots]);
@@ -33,8 +42,7 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
         <?= icon('alert') ?>
         <span>
             <strong>PayPal is in sandbox mode.</strong>
-            Payments here are simulated and no real money moves. Switch <code>PAYPAL_MODE</code>
-            to <code>live</code> in your <code>.env</code> when you are ready to charge properly.
+            Payments here are simulated and no real money moves. Premium checkout is configured for Sandbox only.
         </span>
     </div>
 <?php endif; ?>
@@ -71,6 +79,14 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
                     <span class="plan-badge" style="vertical-align:middle;"><?= e($current['badge']) ?></span>
                 <?php endif; ?>
             </h2>
+                <?php if ($isPaid): ?>
+                    <?php $currentCycle = (string) ($current['billing_cycle'] ?? 'monthly'); ?>
+                    <?php $currentPrice = (float) ($currentCycle === 'yearly' ? ($current['price_yearly'] ?? 0) : ($current['price_monthly'] ?? 0)); ?>
+                    <p class="small muted mt-2"><?= e(money($currentPrice, true)) ?> / <?= $currentCycle === 'yearly' ? 'year' : 'month' ?></p>
+                    <?php if (!empty($current['last_successful_payment_at'])): ?>
+                        <p class="tiny muted">Last successful payment: <?= e(date_label($current['last_successful_payment_at'], 'F j, Y')) ?></p>
+                    <?php endif; ?>
+                <?php endif; ?>
         </div>
 
         <div class="text-right">
@@ -181,14 +197,14 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
                 'cycle'         => $cycle,
                 'currentPlanId' => (int) ($current['id'] ?? 0),
                 'paypalReady'   => $paypalReady,
+                'paypalPremium' => $paypalPremium,
             ]) ?>
         <?php endforeach; ?>
     </div>
 
     <?php if ($status === 'trialing'): ?>
         <p class="small mt-5">
-            Subscribing now does not cut your trial short — your first payment is taken on
-            <?= e(date_label($current['trial_ends_at'] ?? null, 'F j')) ?>.
+            Premium has no PayPal trial and starts billing when you approve it. The existing 14-day artist onboarding trial is separate from the PayPal plan.
         </p>
     <?php endif; ?>
 
@@ -224,6 +240,36 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
                                 <td class="muted nowrap" data-label="Started"><?= e(date_label($row['started_at'] ?? $row['created_at'])) ?></td>
                                 <td class="muted nowrap" data-label="Period end"><?= e(date_label($row['current_period_end'])) ?></td>
                                 <td data-label="Status"><?= view_partial('status-badge', ['status' => $row['status']]) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+<?php endif; ?>
+
+<?php if ($payments !== []): ?>
+    <section class="mt-8">
+        <h2 class="heading-md mb-4">Payment history</h2>
+        <div class="table-wrap">
+            <div class="scroll-x">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Date</th>
+                            <th scope="col">PayPal transaction</th>
+                            <th scope="col">Amount</th>
+                            <th scope="col">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($payments as $payment): ?>
+                            <tr>
+                                <td class="muted nowrap" data-label="Date"><?= e(date_label($payment['paid_at'] ?? $payment['created_at'])) ?></td>
+                                <td class="muted" data-label="PayPal transaction"><?= e($payment['provider_txn_id'] ?: 'Payment attempt') ?></td>
+                                <td class="table__primary nowrap" data-label="Amount"><?= e(money((float) $payment['amount'], true)) ?></td>
+                                <td data-label="Status"><?= e(ucfirst(str_replace('_', ' ', (string) $payment['status']))) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>

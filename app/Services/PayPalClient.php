@@ -36,7 +36,7 @@ final class PayPalClient
 
     public static function isSandbox(): bool
     {
-        return self::mode() !== 'live';
+        return self::mode() === 'sandbox';
     }
 
     public static function clientId(): string
@@ -47,6 +47,18 @@ final class PayPalClient
     private static function apiBase(): string
     {
         return rtrim((string) Config::get('paypal.api_base', 'https://api-m.sandbox.paypal.com'), '/');
+    }
+
+    /** The dedicated Premium setup command is intentionally incapable of Live calls. */
+    public static function requireSandboxMode(): void
+    {
+        if (self::mode() !== 'sandbox') {
+            throw new \RuntimeException('Premium setup is Sandbox-only. Set PAYPAL_MODE=sandbox before running it.');
+        }
+
+        if (!self::isConfigured()) {
+            throw new \RuntimeException('PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must be configured in .env.');
+        }
     }
 
     /**
@@ -100,6 +112,234 @@ final class PayPalClient
         throw new \RuntimeException('Could not create the PayPal product: ' . json_encode($response['body']));
     }
 
+    /** Reuse the exact Premium Sandbox product before creating another one. */
+    public static function ensurePremiumSandboxProduct(): string
+    {
+        self::requireSandboxMode();
+        $expectedName = 'PolishedProV2 Premium';
+        $expectedDescription = 'Monthly subscription to PolishedProV2, an online platform for managing appointments, bookings, customers, and business operations.';
+        $configuredId = trim((string) Config::get('paypal.product_id', ''));
+
+        if ($configuredId !== '') {
+            try {
+                $existing = self::getProduct($configuredId);
+                if (($existing['name'] ?? '') === $expectedName && ($existing['type'] ?? '') === 'SERVICE') {
+                    return self::updatePremiumProductDescription($configuredId, $existing, $expectedDescription);
+                }
+            } catch (\Throwable) {
+                // Search for the named resource before deciding to create one.
+            }
+        }
+
+        foreach (self::listProducts() as $product) {
+            if (($product['name'] ?? '') === $expectedName && ($product['type'] ?? '') === 'SERVICE') {
+                $id = (string) ($product['id'] ?? '');
+                if ($id !== '') {
+                    return self::updatePremiumProductDescription($id, $product, $expectedDescription);
+                }
+            }
+        }
+
+        $response = self::authedRequest('POST', '/v1/catalogs/products', [
+            'name' => $expectedName,
+            'description' => $expectedDescription,
+            'type' => 'SERVICE',
+            'category' => 'SOFTWARE',
+        ], ['PayPal-Request-Id: ' . substr(hash('sha256', 'polishedprov2-premium-product'), 0, 32)]);
+
+        self::requireSuccess($response, [200, 201]);
+        $id = (string) ($response['body']['id'] ?? '');
+        if ($id === '') {
+            throw new \RuntimeException('PayPal did not return a product ID.');
+        }
+
+        return $id;
+    }
+
+    /** @param array<string, mixed> $product */
+    private static function updatePremiumProductDescription(string $productId, array $product, string $description): string
+    {
+        if (($product['description'] ?? '') === $description) {
+            return $productId;
+        }
+
+        $response = self::authedRequest('PATCH', '/v1/catalogs/products/' . rawurlencode($productId), [[
+            'op' => 'replace',
+            'path' => '/description',
+            'value' => $description,
+        ]]);
+        self::requireSuccess($response, [200, 204]);
+
+        $confirmed = self::getProduct($productId);
+        if (($confirmed['name'] ?? '') !== 'PolishedProV2 Premium'
+            || ($confirmed['type'] ?? '') !== 'SERVICE'
+            || ($confirmed['description'] ?? '') !== $description
+        ) {
+            throw new \RuntimeException('The existing Sandbox product could not be updated to the requested details.');
+        }
+
+        return $productId;
+    }
+
+    /** Create or reuse the exact PHP 149/month Sandbox plan and confirm ACTIVE. */
+    public static function ensurePremiumSandboxPlan(string $productId, string $price): string
+    {
+        self::requireSandboxMode();
+        if (number_format((float) $price, 2, '.', '') !== '149.00') {
+            throw new \RuntimeException('PAYPAL_MONTHLY_PRICE must remain 149.00 for this Premium plan.');
+        }
+
+        $configuredId = trim((string) Config::get('paypal.plan_id', ''));
+        if ($configuredId !== '') {
+            try {
+                $existing = self::getPlan($configuredId);
+                if (self::isPremiumPlan($existing, $productId, $price)) {
+                    return self::activateAndConfirmPlan($configuredId, $existing);
+                }
+            } catch (\Throwable) {
+                // Search for the exact named plan before deciding to create one.
+            }
+        }
+
+        foreach (self::listPlans($productId) as $plan) {
+            if (($plan['name'] ?? '') === 'PolishedProV2 Monthly Premium'
+                && ($plan['product_id'] ?? '') === $productId
+                && !empty($plan['id'])
+            ) {
+                $details = self::getPlan((string) $plan['id']);
+                if (self::isPremiumPlan($details, $productId, $price)) {
+                    return self::activateAndConfirmPlan((string) $plan['id'], $details);
+                }
+            }
+        }
+
+        $response = self::authedRequest('POST', '/v1/billing/plans', [
+            'product_id' => $productId,
+            'name' => 'PolishedProV2 Monthly Premium',
+            'description' => 'Monthly Premium subscription for PolishedProV2.',
+            'status' => 'ACTIVE',
+            'billing_cycles' => [[
+                'frequency' => ['interval_unit' => 'MONTH', 'interval_count' => 1],
+                'tenure_type' => 'REGULAR',
+                'sequence' => 1,
+                'total_cycles' => 0,
+                'pricing_scheme' => ['fixed_price' => ['value' => '149.00', 'currency_code' => 'PHP']],
+            ]],
+            'payment_preferences' => [
+                'auto_bill_outstanding' => true,
+                'setup_fee' => ['value' => '0.00', 'currency_code' => 'PHP'],
+                'setup_fee_failure_action' => 'CONTINUE',
+                'payment_failure_threshold' => 1,
+            ],
+        ], ['PayPal-Request-Id: ' . substr(hash('sha256', 'polishedprov2-premium-plan-149-php'), 0, 32)]);
+
+        self::requireSuccess($response, [200, 201]);
+        $id = (string) ($response['body']['id'] ?? '');
+        if ($id === '') {
+            throw new \RuntimeException('PayPal did not return a plan ID.');
+        }
+
+        return self::activateAndConfirmPlan($id, $response['body']);
+    }
+
+    /** @return array<string, mixed> */
+    public static function getProduct(string $productId): array
+    {
+        $response = self::authedRequest('GET', '/v1/catalogs/products/' . rawurlencode($productId));
+        self::requireSuccess($response, [200]);
+        return $response['body'];
+    }
+
+    /** @return array<string, mixed> */
+    public static function getPlan(string $planId): array
+    {
+        $response = self::authedRequest('GET', '/v1/billing/plans/' . rawurlencode($planId));
+        self::requireSuccess($response, [200]);
+        return $response['body'];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private static function listProducts(): array
+    {
+        return self::listResources('/v1/catalogs/products', []);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private static function listPlans(string $productId): array
+    {
+        return self::listResources('/v1/billing/plans', ['product_id' => $productId]);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private static function listResources(string $path, array $filters): array
+    {
+        $items = [];
+        for ($page = 1; $page <= 100; $page++) {
+            $query = http_build_query($filters + ['page_size' => 20, 'page' => $page, 'total_required' => 'true']);
+            $response = self::authedRequest('GET', $path . '?' . $query);
+            self::requireSuccess($response, [200]);
+            $pageItems = $response['body']['products'] ?? $response['body']['plans'] ?? [];
+            if (!is_array($pageItems) || $pageItems === []) {
+                break;
+            }
+            array_push($items, ...$pageItems);
+            if (count($pageItems) < 20) {
+                break;
+            }
+        }
+
+        return $items;
+    }
+
+    /** @param array<string, mixed> $plan */
+    private static function isPremiumPlan(array $plan, string $productId, string $price): bool
+    {
+        $cycle = $plan['billing_cycles'][0] ?? [];
+        $frequency = $cycle['frequency'] ?? [];
+        $fixedPrice = $cycle['pricing_scheme']['fixed_price'] ?? [];
+        $preferences = $plan['payment_preferences'] ?? [];
+        $setupFee = $preferences['setup_fee'] ?? ['value' => '0.00', 'currency_code' => 'PHP'];
+
+        return count($plan['billing_cycles'] ?? []) === 1
+            && ($plan['product_id'] ?? '') === $productId
+            && ($plan['name'] ?? '') === 'PolishedProV2 Monthly Premium'
+            && ($plan['status'] ?? '') !== 'DEACTIVATED'
+            && ($frequency['interval_unit'] ?? '') === 'MONTH'
+            && (int) ($frequency['interval_count'] ?? 0) === 1
+            && ($cycle['tenure_type'] ?? '') === 'REGULAR'
+            && (int) ($cycle['total_cycles'] ?? -1) === 0
+            && (string) ($fixedPrice['value'] ?? '') === number_format((float) $price, 2, '.', '')
+            && ($fixedPrice['currency_code'] ?? '') === 'PHP'
+            && !empty($preferences['auto_bill_outstanding'])
+            && (int) ($preferences['payment_failure_threshold'] ?? 0) === 1
+            && (float) ($setupFee['value'] ?? 0) === 0.0
+            && ($setupFee['currency_code'] ?? 'PHP') === 'PHP';
+    }
+
+    /** @param array<string, mixed> $plan */
+    private static function activateAndConfirmPlan(string $planId, array $plan): string
+    {
+        if (($plan['status'] ?? '') !== 'ACTIVE') {
+            $response = self::authedRequest('POST', '/v1/billing/plans/' . rawurlencode($planId) . '/activate');
+            self::requireSuccess($response, [200, 204]);
+        }
+
+        $confirmed = self::getPlan($planId);
+        if (($confirmed['status'] ?? '') !== 'ACTIVE') {
+            throw new \RuntimeException('PayPal plan did not reach ACTIVE status; checkout remains disabled.');
+        }
+
+        return $planId;
+    }
+
+    /** @param array{status:int, body:array<string, mixed>} $response @param array<int, int> $allowed */
+    private static function requireSuccess(array $response, array $allowed): void
+    {
+        if (!in_array($response['status'], $allowed, true)) {
+            throw new \RuntimeException('PayPal API request failed with HTTP ' . $response['status'] . '. Check server logs for the safe error details.');
+        }
+    }
+
     /**
      * Create a billing plan. Returns the PayPal plan id to store on our row.
      */
@@ -150,7 +390,7 @@ final class PayPalClient
      *
      * @return array{id:string, approve_url:string}
      */
-    public static function createSubscription(string $paypalPlanId, array $subscriber, string $returnUrl, string $cancelUrl, ?string $startAt = null): array
+    public static function createSubscription(string $paypalPlanId, array $subscriber, string $returnUrl, string $cancelUrl, ?string $startAt = null, ?string $customId = null): array
     {
         $payload = [
             'plan_id'    => $paypalPlanId,
@@ -174,6 +414,9 @@ final class PayPalClient
                 'cancel_url' => $cancelUrl,
             ],
         ];
+        if ($customId !== null && $customId !== '') {
+            $payload['custom_id'] = substr($customId, 0, 127);
+        }
 
         // PayPal wants a future UTC instant; a start in the next few minutes
         // is just "now", which is the default anyway.
@@ -209,7 +452,21 @@ final class PayPalClient
     public static function getSubscription(string $subscriptionId): array
     {
         $response = self::authedRequest('GET', '/v1/billing/subscriptions/' . rawurlencode($subscriptionId));
+        self::requireSuccess($response, [200]);
         return $response['body'];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public static function subscriptionTransactions(string $subscriptionId, string $startTime, string $endTime): array
+    {
+        $query = http_build_query(['start_time' => $startTime, 'end_time' => $endTime]);
+        $response = self::authedRequest(
+            'GET',
+            '/v1/billing/subscriptions/' . rawurlencode($subscriptionId) . '/transactions?' . $query
+        );
+        self::requireSuccess($response, [200]);
+        $transactions = $response['body']['transactions'] ?? [];
+        return is_array($transactions) ? $transactions : [];
     }
 
     public static function cancelSubscription(string $subscriptionId, string $reason = 'Cancelled by the artist'): bool
@@ -300,12 +557,13 @@ final class PayPalClient
             'Authorization: Bearer ' . self::accessToken(),
         ], $extraHeaders);
 
-        return self::request(
+        $response = self::request(
             $method,
             $path,
             $payload === null ? null : json_encode($payload, JSON_UNESCAPED_SLASHES),
             $headers
         );
+        return $response;
     }
 
     /**

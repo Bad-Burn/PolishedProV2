@@ -176,6 +176,7 @@ $router->group('/artist', ['auth', 'role:artist', 'subscription', 'nocache'], fu
     // Billing
     $router->get('/subscription', [SubscriptionController::class, 'index'])->name('artist.subscription');
     $router->post('/subscription/checkout', [SubscriptionController::class, 'checkout']);
+    $router->post('/subscription/confirm', [SubscriptionController::class, 'confirm']);
     $router->get('/subscription/return', [SubscriptionController::class, 'returned']);
     $router->get('/subscription/cancel', [SubscriptionController::class, 'cancelled']);
     $router->post('/subscription/cancel', [SubscriptionController::class, 'cancel']);

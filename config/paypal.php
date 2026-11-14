@@ -21,6 +21,12 @@ return [
     // From the webhook you create in the PayPal developer dashboard.
     'webhook_id' => Config::env('PAYPAL_WEBHOOK_ID', ''),
 
+    // The dedicated Premium Sandbox product and plan. Product/plan IDs are
+    // identifiers, not credentials; secrets stay in the server environment.
+    'product_id' => Config::env('PAYPAL_PRODUCT_ID', ''),
+    'plan_id'    => Config::env('PAYPAL_PLAN_ID', ''),
+    'monthly_price' => Config::env('PAYPAL_MONTHLY_PRICE', '149.00'),
+
     'currency' => Config::env('PAYPAL_CURRENCY', 'PHP'),
 
     'brand_name' => Config::env('APP_NAME', 'PolishedPro'),
@@ -37,5 +43,7 @@ return [
         'BILLING.SUBSCRIPTION.EXPIRED',
         'BILLING.SUBSCRIPTION.PAYMENT.FAILED',
         'PAYMENT.SALE.COMPLETED',
+        'PAYMENT.SALE.REFUNDED',
+        'PAYMENT.SALE.REVERSED',
     ],
 ];

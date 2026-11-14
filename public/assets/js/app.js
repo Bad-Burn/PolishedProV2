@@ -441,8 +441,78 @@
   });
 
   /* ----------------------------------------------------------------------
+     PayPal subscription buttons. Server confirmation owns all access changes.
+     ---------------------------------------------------------------------- */
+
+  function setupPaypalSubscriptionButtons() {
+    var containers = doc.querySelectorAll('[data-paypal-subscription]');
+    if (!containers.length) return;
+
+    containers.forEach(function (container) {
+      var button = container.querySelector('.paypal-subscription__button');
+      var status = container.querySelector('[data-paypal-status]');
+      if (!button || !window.paypal || !window.paypal.Buttons) {
+        if (status) status.textContent = 'PayPal could not load. Refresh the page or try again later.';
+        return;
+      }
+
+      window.paypal.Buttons({
+        style: { layout: 'vertical', shape: 'rect', label: 'paypal', height: 44 },
+        createSubscription: function (_data, actions) {
+          var subscription = {
+            plan_id: container.getAttribute('data-plan-id'),
+            custom_id: container.getAttribute('data-customer-reference')
+          };
+          var startTime = container.getAttribute('data-start-time');
+          if (startTime) subscription.start_time = startTime;
+          return actions.subscription.create(subscription);
+        },
+        onApprove: function (data) {
+          if (status) status.textContent = 'PayPal approval received. Confirming the first payment…';
+
+          var body = new URLSearchParams();
+          body.set('_token', csrfToken());
+          body.set('subscription_id', data.subscriptionID || '');
+
+          return fetch(container.getAttribute('data-confirm-url'), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Accept': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest',
+              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+            },
+            body: body.toString()
+          }).then(function (response) {
+            return response.json().then(function (result) {
+              if (!response.ok && response.status !== 202) {
+                throw new Error(result.message || 'The subscription could not be verified.');
+              }
+              return result;
+            });
+          }).then(function (result) {
+            if (status) status.textContent = result.message || 'PayPal is confirming your payment.';
+            if (result.status === 'active') window.location.reload();
+          }).catch(function () {
+            if (status) status.textContent = 'PayPal approval was received, but we could not confirm it yet. Refresh this page shortly; access starts only after payment confirmation.';
+          });
+        },
+        onCancel: function () {
+          if (status) status.textContent = 'Checkout cancelled. Nothing has been activated.';
+        },
+        onError: function () {
+          if (status) status.textContent = 'PayPal checkout could not start. Please try again later.';
+        }
+      }).render(button).catch(function () {
+        if (status) status.textContent = 'PayPal checkout could not load. Refresh the page or try again later.';
+      });
+    });
+  }
+
+  /* ----------------------------------------------------------------------
      Boot
      ---------------------------------------------------------------------- */
 
   applyTheme(currentTheme());
+  setupPaypalSubscriptionButtons();
 })();

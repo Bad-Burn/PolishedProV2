@@ -120,6 +120,15 @@ final class Plan
         );
     }
 
+    /** Store the dedicated monthly Premium plan without touching other cycles. */
+    public static function setPaypalMonthlyPlanId(int $id, string $paypalPlanId): void
+    {
+        Database::affectingStatement(
+            'UPDATE plans SET paypal_plan_id_monthly = :plan WHERE id = :id',
+            ['plan' => $paypalPlanId, 'id' => $id]
+        );
+    }
+
     /** Decode the JSON highlights column into a plain array of strings. */
     private static function hydrate(array $row): array
     {

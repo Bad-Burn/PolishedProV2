@@ -7,6 +7,7 @@
  * @var int $currentPlanId
  * @var bool $showAction
  * @var bool $paypalReady
+ * @var array<string, mixed> $paypalPremium
  */
 
 declare(strict_types=1);
@@ -18,9 +19,12 @@ $cycle         = ($cycle ?? 'monthly') === 'yearly' ? 'yearly' : 'monthly';
 $currentPlanId = (int) ($currentPlanId ?? 0);
 $showAction    = $showAction ?? true;
 $paypalReady   = $paypalReady ?? true;
+$paypalPremium = $paypalPremium ?? [];
 
 $price     = Plan::priceFor($plan, $cycle);
 $isFree    = !Plan::isPaid($plan);
+$hasPrice  = $isFree || $price > 0;
+$isPremium = ($plan['code'] ?? '') === 'premium';
 $isCurrent = $currentPlanId === (int) ($plan['id'] ?? -1);
 $saving    = Plan::yearlySavingPercent($plan);
 
@@ -35,11 +39,14 @@ $isRecommended = ($plan['code'] ?? '') === 'studio' && !$isCurrent;
     <?php endif; ?>
 
     <h3 class="plan__name"><?= e($plan['name']) ?></h3>
-    <p class="plan__tagline"><?= e($plan['tagline'] ?? '') ?></p>
+    <p class="plan__tagline">
+        <?php if ($isPremium): ?>PolishedProV2 Monthly Premium &middot; <?php endif; ?>
+        <?= e($plan['tagline'] ?? '') ?>
+    </p>
 
     <p class="plan__price">
-        <span class="plan__amount"><?= $isFree ? 'Free' : e(money($price, true)) ?></span>
-        <?php if (!$isFree): ?>
+        <span class="plan__amount"><?= $isFree ? 'Free' : ($hasPrice ? e(money($price, true)) : 'Monthly only') ?></span>
+        <?php if (!$isFree && $hasPrice): ?>
             <span class="plan__period">/ <?= $cycle === 'yearly' ? 'year' : 'month' ?></span>
         <?php endif; ?>
     </p>
@@ -61,6 +68,20 @@ $isRecommended = ($plan['code'] ?? '') === 'studio' && !$isCurrent;
             <button class="btn btn--secondary btn--block" type="button" disabled>Current plan</button>
         <?php elseif ($isFree): ?>
             <p class="tiny muted text-center">No longer offered.</p>
+        <?php elseif (!$hasPrice): ?>
+            <p class="tiny muted text-center">This plan is billed monthly.</p>
+        <?php elseif ($isPremium && $cycle === 'monthly' && !empty($paypalPremium['ready'])): ?>
+            <div class="paypal-subscription"
+                 data-paypal-subscription
+                 data-plan-id="<?= e((string) $paypalPremium['plan_id']) ?>"
+                 data-customer-reference="<?= e((string) $paypalPremium['customer_reference']) ?>"
+                 data-confirm-url="<?= e((string) $paypalPremium['confirm_url']) ?>"
+                 <?php if (!empty($paypalPremium['start_time'])): ?>data-start-time="<?= e((string) $paypalPremium['start_time']) ?>"<?php endif; ?>>
+                <div class="paypal-subscription__button" aria-label="Subscribe to Premium with PayPal"></div>
+                <p class="tiny muted text-center" data-paypal-status aria-live="polite"></p>
+            </div>
+        <?php elseif ($isPremium && $cycle === 'monthly' && !empty($paypalPremium['sandbox_only'])): ?>
+            <button class="btn btn--secondary btn--block" type="button" disabled>Sandbox checkout not configured</button>
         <?php elseif (!$paypalReady): ?>
             <button class="btn btn--secondary btn--block" type="button" disabled>Payments not configured</button>
         <?php else: ?>

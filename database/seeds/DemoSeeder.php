@@ -107,6 +107,26 @@ final class DemoSeeder
     {
         $plans = [
             [
+                'code'    => 'premium',
+                'name'    => 'Premium',
+                'tagline' => 'For independent artists ready to grow their bookings.',
+                'monthly' => 149.00,
+                'yearly'  => 0.00,
+                'services'  => 3,
+                'portfolio' => 6,
+                'weight'    => 0,
+                'badge'     => null,
+                'analytics' => 0,
+                'instant'   => 0,
+                'highlights' => [
+                    'Up to 3 active services',
+                    '6 portfolio photos',
+                    'Standard search placement',
+                    'Booking calendar and client messages',
+                    'Reviews and ratings',
+                ],
+            ],
+            [
                 // Retired: replaced by the free trial. Seeded inactive so old
                 // subscription rows keep a valid foreign key, and so the plan
                 // chooser never shows it.

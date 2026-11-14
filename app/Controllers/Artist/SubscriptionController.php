@@ -34,6 +34,7 @@ final class SubscriptionController extends Controller
         $cycle    = $request->query('cycle') === 'yearly' ? 'yearly' : 'monthly';
         $premium  = Plan::findByCode('premium');
         $premiumPlanId = (string) ($premium['paypal_plan_id_monthly'] ?? '');
+        $premiumYearlyPlanId = (string) ($premium['paypal_plan_id_yearly'] ?? '');
 
         $this->view('artist/subscription', [
             'title'        => 'Plan and billing',
@@ -51,6 +52,11 @@ final class SubscriptionController extends Controller
                 'ready' => PayPalClient::isConfigured()
                     && PayPalClient::isSandbox()
                     && $premiumPlanId !== ''
+                    && trim((string) Config::get('paypal.webhook_id', '')) !== ''
+                    && strtoupper((string) Config::get('paypal.currency', 'PHP')) === 'PHP',
+                'yearly_ready' => PayPalClient::isConfigured()
+                    && PayPalClient::isSandbox()
+                    && $premiumYearlyPlanId !== ''
                     && trim((string) Config::get('paypal.webhook_id', '')) !== ''
                     && strtoupper((string) Config::get('paypal.currency', 'PHP')) === 'PHP',
                 'sandbox_only' => true,
@@ -76,7 +82,7 @@ final class SubscriptionController extends Controller
         $cycle  = $request->string('cycle') === 'yearly' ? 'yearly' : 'monthly';
 
         $plan = Plan::find($planId);
-        if ($plan === null || (int) $plan['is_active'] !== 1) {
+        if ($plan === null || (int) $plan['is_active'] !== 1 || ($plan['code'] ?? '') !== 'premium') {
             $this->failure('That plan is not available.', '/artist/subscription');
         }
 

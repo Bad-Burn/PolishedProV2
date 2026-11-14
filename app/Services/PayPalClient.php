@@ -117,7 +117,7 @@ final class PayPalClient
     {
         self::requireSandboxMode();
         $expectedName = 'PolishedProV2 Premium';
-        $expectedDescription = 'Monthly subscription to PolishedProV2, an online platform for managing appointments, bookings, customers, and business operations.';
+        $expectedDescription = 'Monthly and yearly Premium subscriptions to PolishedProV2, an online platform for managing appointments, bookings, customers, and business operations.';
         $configuredId = trim((string) Config::get('paypal.product_id', ''));
 
         if ($configuredId !== '') {
@@ -242,6 +242,68 @@ final class PayPalClient
         return self::activateAndConfirmPlan($id, $response['body']);
     }
 
+    /** Create or reuse the exact yearly Premium Sandbox plan and confirm ACTIVE. */
+    public static function ensurePremiumSandboxYearlyPlan(string $productId, string $price, ?string $configuredId = null): string
+    {
+        self::requireSandboxMode();
+        if (!is_numeric($price) || (float) $price <= 0) {
+            throw new \RuntimeException('PAYPAL_YEARLY_PRICE must be a positive amount.');
+        }
+
+        $price = number_format((float) $price, 2, '.', '');
+        $configuredId = trim((string) $configuredId);
+        if ($configuredId !== '') {
+            try {
+                $existing = self::getPlan($configuredId);
+                if (self::isPremiumYearlyPlan($existing, $productId, $price)) {
+                    return self::activateAndConfirmPlan($configuredId, $existing);
+                }
+            } catch (\Throwable) {
+                // Search for the exact named plan before deciding to create one.
+            }
+        }
+
+        foreach (self::listPlans($productId) as $plan) {
+            if (($plan['name'] ?? '') === 'PolishedProV2 Yearly Premium'
+                && ($plan['product_id'] ?? '') === $productId
+                && !empty($plan['id'])
+            ) {
+                $details = self::getPlan((string) $plan['id']);
+                if (self::isPremiumYearlyPlan($details, $productId, $price)) {
+                    return self::activateAndConfirmPlan((string) $plan['id'], $details);
+                }
+            }
+        }
+
+        $response = self::authedRequest('POST', '/v1/billing/plans', [
+            'product_id' => $productId,
+            'name' => 'PolishedProV2 Yearly Premium',
+            'description' => 'Yearly Premium subscription for PolishedProV2.',
+            'status' => 'ACTIVE',
+            'billing_cycles' => [[
+                'frequency' => ['interval_unit' => 'YEAR', 'interval_count' => 1],
+                'tenure_type' => 'REGULAR',
+                'sequence' => 1,
+                'total_cycles' => 0,
+                'pricing_scheme' => ['fixed_price' => ['value' => $price, 'currency_code' => 'PHP']],
+            ]],
+            'payment_preferences' => [
+                'auto_bill_outstanding' => true,
+                'setup_fee' => ['value' => '0.00', 'currency_code' => 'PHP'],
+                'setup_fee_failure_action' => 'CONTINUE',
+                'payment_failure_threshold' => 1,
+            ],
+        ], ['PayPal-Request-Id: ' . substr(hash('sha256', 'polishedprov2-premium-yearly-plan-' . $price . '-php'), 0, 32)]);
+
+        self::requireSuccess($response, [200, 201]);
+        $id = (string) ($response['body']['id'] ?? '');
+        if ($id === '') {
+            throw new \RuntimeException('PayPal did not return a yearly plan ID.');
+        }
+
+        return self::activateAndConfirmPlan($id, $response['body']);
+    }
+
     /** @return array<string, mixed> */
     public static function getProduct(string $productId): array
     {
@@ -312,6 +374,35 @@ final class PayPalClient
             && ($cycle['tenure_type'] ?? '') === 'REGULAR'
             && (int) ($cycle['total_cycles'] ?? -1) === 0
             // PayPal may serialize the same amount as "149.0" or "149.00".
+            && $priceMatches
+            && ($fixedPrice['currency_code'] ?? '') === 'PHP'
+            && !empty($preferences['auto_bill_outstanding'])
+            && (int) ($preferences['payment_failure_threshold'] ?? 0) === 1
+            && ($preferences['setup_fee_failure_action'] ?? '') === 'CONTINUE'
+            && (float) ($setupFee['value'] ?? 0) === 0.0
+            && ($setupFee['currency_code'] ?? 'PHP') === 'PHP';
+    }
+
+    /** @param array<string, mixed> $plan */
+    private static function isPremiumYearlyPlan(array $plan, string $productId, string $price): bool
+    {
+        $cycle = $plan['billing_cycles'][0] ?? [];
+        $frequency = $cycle['frequency'] ?? [];
+        $fixedPrice = $cycle['pricing_scheme']['fixed_price'] ?? [];
+        $preferences = $plan['payment_preferences'] ?? [];
+        $setupFee = $preferences['setup_fee'] ?? ['value' => '0.00', 'currency_code' => 'PHP'];
+        $actualPrice = $fixedPrice['value'] ?? null;
+        $priceMatches = is_numeric($actualPrice)
+            && number_format((float) $actualPrice, 2, '.', '') === $price;
+
+        return count($plan['billing_cycles'] ?? []) === 1
+            && ($plan['product_id'] ?? '') === $productId
+            && ($plan['name'] ?? '') === 'PolishedProV2 Yearly Premium'
+            && ($plan['status'] ?? '') !== 'DEACTIVATED'
+            && ($frequency['interval_unit'] ?? '') === 'YEAR'
+            && (int) ($frequency['interval_count'] ?? 0) === 1
+            && ($cycle['tenure_type'] ?? '') === 'REGULAR'
+            && (int) ($cycle['total_cycles'] ?? -1) === 0
             && $priceMatches
             && ($fixedPrice['currency_code'] ?? '') === 'PHP'
             && !empty($preferences['auto_bill_outstanding'])

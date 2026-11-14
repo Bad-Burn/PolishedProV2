@@ -99,9 +99,9 @@ final class DemoSeeder
     }
 
     /**
-     * The three tiers. What a paid plan buys is deliberately narrow and honest:
-     * more active services, more portfolio slots, and higher placement in
-     * search results. Nothing here hides a customer-facing safety feature.
+     * Premium is the only plan offered to new subscribers. Studio and
+     * Signature remain inactive so historical subscription rows keep a valid
+     * plan reference without appearing in the plan chooser.
      */
     private function seedPlans(): void
     {
@@ -111,7 +111,7 @@ final class DemoSeeder
                 'name'    => 'Premium',
                 'tagline' => 'For independent artists ready to grow their bookings.',
                 'monthly' => 149.00,
-                'yearly'  => 0.00,
+                'yearly'  => 1490.00,
                 'services'  => 3,
                 'portfolio' => 6,
                 'weight'    => 0,
@@ -154,6 +154,7 @@ final class DemoSeeder
                 'code'    => 'studio',
                 'name'    => 'Studio',
                 'tagline' => 'For artists with a full menu and a steady calendar.',
+                'active'  => 0,
                 'monthly' => 349.00,
                 'yearly'  => 3490.00,
                 'services'  => 15,
@@ -175,6 +176,7 @@ final class DemoSeeder
                 'code'    => 'signature',
                 'name'    => 'Signature',
                 'tagline' => 'Maximum reach for established studios and teams.',
+                'active'  => 0,
                 'monthly' => 749.00,
                 'yearly'  => 7490.00,
                 'services'  => null,   // unlimited

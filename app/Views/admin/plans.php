@@ -16,7 +16,7 @@ end_section();
 <header class="dash__head">
     <div>
         <h1>Plans</h1>
-        <p>What each tier costs and what it unlocks.</p>
+        <p>Premium pricing and billing settings. Retired plans remain read-only for subscription history.</p>
     </div>
 </header>
 
@@ -26,8 +26,8 @@ end_section();
         <span>
             <strong>PayPal is not configured.</strong>
             Add <code>PAYPAL_CLIENT_ID</code> and <code>PAYPAL_CLIENT_SECRET</code> to your
-            <code>.env</code>, then run <code>php bin/paypal-plans.php</code> to create the
-            billing plans and fill in the ids below automatically.
+            <code>.env</code>, then run <code>php bin/paypal-premium.php</code> to create the
+            monthly and yearly Sandbox plans and save their ids automatically.
         </span>
     </div>
 <?php endif; ?>
@@ -59,6 +59,7 @@ end_section();
             <?php endif; ?>
         </div>
 
+        <?php if (($plan['code'] ?? '') === 'premium'): ?>
         <form method="post" action="<?= e(url('/admin/plans/' . (int) $plan['id'])) ?>" data-once>
             <?= csrf_field() ?>
 
@@ -156,5 +157,8 @@ end_section();
 
             <button class="btn btn--primary" type="submit">Save <?= e($plan['name']) ?></button>
         </form>
+        <?php else: ?>
+            <p class="muted small">Archived plan. Kept unchanged for existing subscription history; new subscriptions and manual grants use Premium.</p>
+        <?php endif; ?>
     </section>
 <?php endforeach; ?>

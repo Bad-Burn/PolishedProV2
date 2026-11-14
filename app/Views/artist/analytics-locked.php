@@ -24,12 +24,11 @@ end_section();
         <?= icon('chart') ?>
     </span>
 
-    <h2 class="heading-lg mb-3">Analytics comes with the Signature plan</h2>
+    <h2 class="heading-lg mb-3">Analytics isn't included with Premium</h2>
 
     <p class="muted mb-6">
-        You are on the <strong><?= e($plan['name']) ?></strong> plan. Upgrading unlocks a six-month
-        revenue trend, your most-booked services, your cancellation rate, and a full rating breakdown —
-        alongside more service listings and higher placement in search.
+        You are on the <strong><?= e($plan['name']) ?></strong> plan. This dashboard shows your
+        bookings, recent earnings, and current rating. Contact support if you need detailed analytics.
     </p>
 
     <p class="muted small mb-6">
@@ -38,7 +37,7 @@ end_section();
     </p>
 
     <div class="row">
-        <a class="btn btn--primary" href="<?= e(url('/artist/subscription')) ?>">Compare plans</a>
+        <a class="btn btn--primary" href="<?= e(url('/artist/subscription')) ?>">View Premium billing</a>
         <a class="btn btn--ghost" href="<?= e(url('/artist')) ?>">Back to dashboard</a>
     </div>
 </div>

@@ -20,7 +20,7 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
             <h1 class="display-1 mb-4">Try it free.<br>Then pay when it pays you back.</h1>
             <p class="lede" style="margin-inline:auto;">
                 We never take a commission on your bookings. The subscription is the only thing
-                you ever pay us. Every artist starts with a 14-day trial on the full Studio plan — no card needed to begin.
+                you ever pay us. Every artist starts with a 14-day Premium trial — no card needed to begin.
             </p>
         </div>
 
@@ -33,7 +33,7 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
             </div>
         </div>
 
-        <div class="plan-grid">
+        <div class="plan-grid<?= count($plans) === 1 ? ' plan-grid--single' : '' ?>">
             <?php foreach ($plans as $plan): ?>
                 <?= view_partial('plan-card', [
                     'plan'          => $plan,
@@ -49,42 +49,31 @@ $currentPlanId = Auth::isArtist() ? (int) (Subscription::planFor((int) Auth::id(
                 <a class="btn btn--primary btn--lg" href="<?= e(url('/register', ['as' => 'artist'])) ?>">
                     Create an artist account
                 </a>
-                <p class="tiny muted mt-3">Every plan starts with a 14-day free trial. No card needed to begin.</p>
+                <p class="tiny muted mt-3">Your 14-day Premium trial starts with no card needed.</p>
             </div>
         <?php endif; ?>
     </div>
 </section>
 
-<!-- What the plans actually change -->
+<!-- What Premium includes -->
 <section class="section section--sunk">
     <div class="container container--narrow">
-        <h2 class="display-2 mb-8">What a paid plan actually changes</h2>
+        <h2 class="display-2 mb-8">What Premium includes</h2>
 
         <div class="stack-lg">
             <div>
-                <h3 class="heading-sm mb-2">More services you can publish at once</h3>
+                <h3 class="heading-sm mb-2">Your services and portfolio</h3>
                 <p class="muted">
-                    Studio covers fifteen live services. If your menu is longer than that — a colourist
-                    with six variations of balayage, plus treatments and consultations — Signature lifts
-                    the cap entirely. Services beyond your limit are hidden, never deleted.
+                    Premium includes up to three active services and six portfolio photos, alongside
+                    your booking calendar, client messages, reviews, and standard search placement.
                 </p>
             </div>
 
             <div>
-                <h3 class="heading-sm mb-2">Higher placement on the Recommended sort</h3>
+                <h3 class="heading-sm mb-2">Monthly or yearly billing</h3>
                 <p class="muted">
-                    Artists on the higher tier rank above the rest when someone browses with the default sort.
-                    Rating and review count still break ties, and every other sort — highest rated,
-                    price, newest — ignores your plan completely. We are not going to pretend a paid
-                    listing is the best match when it is not.
-                </p>
-            </div>
-
-            <div>
-                <h3 class="heading-sm mb-2">A badge, analytics, and instant booking</h3>
-                <p class="muted">
-                    A plan badge on your profile, a proper analytics dashboard, and the option to let
-                    clients book without waiting for you to confirm.
+                    Choose the payment cycle that works for you. Cancel from your billing page or
+                    PayPal, and keep access through the end of your paid period.
                 </p>
             </div>
 

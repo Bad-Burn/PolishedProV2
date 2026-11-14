@@ -57,7 +57,7 @@ return [
      */
     'subscription' => [
         'trial_days'      => (int) Config::env('TRIAL_DAYS', 14),
-        'trial_plan_code' => (string) Config::env('TRIAL_PLAN_CODE', 'studio'),
+        'trial_plan_code' => (string) Config::env('TRIAL_PLAN_CODE', 'premium'),
         // Warn the artist this many days out from the end of their trial.
         'trial_warn_days' => 3,
     ],

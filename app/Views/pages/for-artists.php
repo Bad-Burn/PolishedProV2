@@ -124,7 +124,7 @@ layout('app');
                 <h3 class="heading-sm mb-3">A portfolio that loads fast</h3>
                 <p class="muted">
                     Upload your work and we resize it, strip the location data out of the file, and
-                    serve it properly. Thirty photos on Studio, unlimited on Signature.
+                    serve it properly. Premium includes up to six portfolio photos.
                 </p>
             </article>
         </div>

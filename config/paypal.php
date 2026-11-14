@@ -26,6 +26,7 @@ return [
     'product_id' => Config::env('PAYPAL_PRODUCT_ID', ''),
     'plan_id'    => Config::env('PAYPAL_PLAN_ID', ''),
     'monthly_price' => Config::env('PAYPAL_MONTHLY_PRICE', '149.00'),
+    'yearly_price' => Config::env('PAYPAL_YEARLY_PRICE', '1490.00'),
 
     'currency' => Config::env('PAYPAL_CURRENCY', 'PHP'),
 

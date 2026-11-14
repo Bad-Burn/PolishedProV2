@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Create or reuse PolishedProV2's PHP 149/month PayPal Premium plan in Sandbox.
+ * Create or reuse PolishedProV2's monthly and yearly PayPal Premium plans in Sandbox.
  * Usage: php bin/paypal-premium.php
  */
 
@@ -26,42 +26,58 @@ try {
         throw new RuntimeException('PAYPAL_MONTHLY_PRICE must be 149.00 for the requested Premium plan.');
     }
     $price = $configuredPrice;
+    $configuredYearlyPrice = trim((string) Config::get('paypal.yearly_price', '1490.00'));
+    if (!preg_match('/^\d+\.\d{2}$/', $configuredYearlyPrice) || (float) $configuredYearlyPrice <= 0) {
+        throw new RuntimeException('PAYPAL_YEARLY_PRICE must be a positive amount with two decimal places.');
+    }
+    $yearlyPrice = $configuredYearlyPrice;
 
     $plan = Plan::findByCode('premium');
     if ($plan === null || (int) ($plan['is_active'] ?? 0) !== 1) {
         throw new RuntimeException('Run php bin/migrate.php first. The active Premium plan is missing from the database.');
     }
     if (number_format((float) $plan['price_monthly'], 2, '.', '') !== $price
+        || number_format((float) $plan['price_yearly'], 2, '.', '') !== $yearlyPrice
         || strtoupper((string) ($plan['currency'] ?? '')) !== 'PHP'
     ) {
-        throw new RuntimeException('The local Premium plan must match PHP 149.00 before PayPal setup can continue.');
+        throw new RuntimeException('The local Premium plan must match PHP 149.00 monthly and PHP ' . $yearlyPrice . ' yearly before PayPal setup can continue.');
     }
 
     cli_line('Environment: Sandbox');
-    cli_line('Plan:        PolishedProV2 Monthly Premium');
-    cli_line('Price:       PHP ' . $price . ' / month');
+    cli_line('Plan:        PolishedProV2 Premium');
+    cli_line('Price:       PHP ' . $price . ' / month; PHP ' . $yearlyPrice . ' / year');
     cli_line('');
 
     cli_line('Checking for the Sandbox product…');
     $productId = PayPalClient::ensurePremiumSandboxProduct();
     cli_ok('Product ID: ' . $productId);
 
-    cli_line('Checking for an exact active plan…');
+    cli_line('Checking for the exact monthly Sandbox plan…');
     $paypalPlanId = PayPalClient::ensurePremiumSandboxPlan($productId, $price);
-    cli_ok('Active Plan ID: ' . $paypalPlanId);
+    cli_ok('Monthly Plan ID: ' . $paypalPlanId);
 
-    Plan::setPaypalMonthlyPlanId((int) $plan['id'], $paypalPlanId);
+    cli_line('Checking for the exact yearly Sandbox plan…');
+    $yearlyPaypalPlanId = PayPalClient::ensurePremiumSandboxYearlyPlan(
+        $productId,
+        $yearlyPrice,
+        (string) ($plan['paypal_plan_id_yearly'] ?? '')
+    );
+    cli_ok('Yearly Plan ID: ' . $yearlyPaypalPlanId);
+
+    Plan::setPaypalPlanIds((int) $plan['id'], $paypalPlanId, $yearlyPaypalPlanId);
     $saved = write_paypal_env([
         'PAYPAL_PRODUCT_ID' => $productId,
         'PAYPAL_PLAN_ID' => $paypalPlanId,
         'PAYPAL_MONTHLY_PRICE' => $price,
+        'PAYPAL_YEARLY_PRICE' => $yearlyPrice,
     ]);
 
-    cli_ok('The Premium plan ID is stored on the local plan row.');
-    cli_ok($saved ? 'The product ID, plan ID, and price were saved to .env.' : 'IDs were not written to .env; add them using the instructions below.');
+    cli_ok('Both Premium plan IDs are stored on the local plan row.');
+    cli_ok($saved ? 'The product ID, monthly plan ID, and prices were saved to .env.' : 'The product ID, monthly plan ID, and prices were not written to .env; add them using the instructions below.');
     cli_line('');
     cli_line('Product ID: ' . $productId);
-    cli_line('Plan ID:    ' . $paypalPlanId);
+    cli_line('Monthly ID: ' . $paypalPlanId);
+    cli_line('Yearly ID:  ' . $yearlyPaypalPlanId);
     cli_line('');
     cli_warn('No Live resources were created. This command refuses to run unless PAYPAL_MODE=sandbox.');
     cli_line('Next: add the Sandbox webhook over HTTPS and set PAYPAL_WEBHOOK_ID in .env.');
@@ -79,9 +95,9 @@ function write_paypal_env(array $values): bool
     }
 
     foreach ($values as $key => $value) {
-        if (preg_match('/^[A-Z0-9_-]+$/', (string) $value) !== 1
-            && !($key === 'PAYPAL_MONTHLY_PRICE' && preg_match('/^\d+\.\d{2}$/', (string) $value) === 1)
-        ) {
+        $isPrice = in_array($key, ['PAYPAL_MONTHLY_PRICE', 'PAYPAL_YEARLY_PRICE'], true)
+            && preg_match('/^\d+\.\d{2}$/', (string) $value) === 1;
+        if (preg_match('/^[A-Z0-9_-]+$/', (string) $value) !== 1 && !$isPrice) {
             throw new RuntimeException('PayPal returned an invalid identifier; .env was not changed.');
         }
     }

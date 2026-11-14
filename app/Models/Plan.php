@@ -67,7 +67,7 @@ final class Plan
     /** The plan a trial grants. Falls back to the cheapest live plan. */
     public static function trial(): array
     {
-        $code = (string) \App\Core\Config::get('app.subscription.trial_plan_code', 'studio');
+        $code = (string) \App\Core\Config::get('app.subscription.trial_plan_code', 'premium');
         $plan = self::findByCode($code);
 
         if ($plan === null || (int) ($plan['is_active'] ?? 0) !== 1) {
@@ -117,15 +117,6 @@ final class Plan
         Database::affectingStatement(
             'UPDATE plans SET paypal_plan_id_monthly = :m, paypal_plan_id_yearly = :y WHERE id = :id',
             ['m' => $monthly, 'y' => $yearly, 'id' => $id]
-        );
-    }
-
-    /** Store the dedicated monthly Premium plan without touching other cycles. */
-    public static function setPaypalMonthlyPlanId(int $id, string $paypalPlanId): void
-    {
-        Database::affectingStatement(
-            'UPDATE plans SET paypal_plan_id_monthly = :plan WHERE id = :id',
-            ['plan' => $paypalPlanId, 'id' => $id]
         );
     }
 

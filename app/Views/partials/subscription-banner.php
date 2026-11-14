@@ -55,7 +55,7 @@ $warnAt = (int) \App\Core\Config::get('app.subscription.trial_warn_days', 3);
         <?= icon('sparkle') ?>
         <span>
             You are on a free trial — <strong><?= e(plural($access['days_left'], 'day')) ?> left</strong>,
-            with full <?= e($currentPlan['name'] ?? 'Studio') ?> features.
+            with full <?= e($currentPlan['name'] ?? 'Premium') ?> features.
             <a href="<?= e(url('/artist/subscription')) ?>">Pick a plan</a> any time to keep going.
         </span>
     </div>

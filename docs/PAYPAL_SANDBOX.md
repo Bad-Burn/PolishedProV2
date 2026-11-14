@@ -1,6 +1,6 @@
 # PayPal Premium Sandbox setup
 
-PolishedProV2 already sells artist listing plans. This integration adds an artist **Premium** plan for PHP 149/month and leaves customer accounts free. The PayPal plan has one regular monthly cycle, unlimited renewals, no PayPal trial or setup fee, automatic outstanding billing, and a one-failure suspension threshold. Existing Studio and Signature plans remain available.
+PolishedProV2 offers one artist plan: **Premium**, at PHP 149/month or PHP 1,490/year. Customer accounts stay free. Both PayPal plans renew on their selected monthly or yearly interval, have no PayPal trial or setup fee, and use automatic outstanding billing with a one-failure suspension threshold. Studio and Signature are hidden from new sales; existing subscriptions keep their agreed terms and records.
 
 The app's separate 14-day artist onboarding trial remains an account-level feature. The Premium PayPal agreement itself has no trial and charges when the artist approves it.
 
@@ -27,7 +27,10 @@ The app's separate 14-day artist onboarding trial remains an account-level featu
    PAYPAL_PRODUCT_ID=
    PAYPAL_PLAN_ID=
    PAYPAL_MONTHLY_PRICE=149.00
+   PAYPAL_YEARLY_PRICE=1490.00
    ```
+
+   `PAYPAL_PLAN_ID` is the monthly plan ID. The yearly plan ID is stored on the Premium row in the database.
 
    Keep the Secret in `.env`; do not paste it into chat, HTML, JavaScript, or Git. PayPal lists PHP as a supported payment currency. PayPal account country, receiving currency, and product access can still affect whether an account is allowed to create or collect subscriptions.
 
@@ -39,13 +42,13 @@ After the migration and credentials are set, run:
 php bin/paypal-premium.php
 ```
 
-This CLI-only command refuses to make API calls unless `PAYPAL_MODE=sandbox`. It validates any configured IDs, searches Sandbox for matching resources before creating new ones, verifies the plan fields and `ACTIVE` status, saves the plan ID on the local Premium row, and writes only the product ID, plan ID, and price to `.env`. It never prints or writes the Client Secret.
+This CLI-only command refuses to make API calls unless `PAYPAL_MODE=sandbox`. It validates the local Premium prices, searches Sandbox for matching monthly and yearly plans before creating new ones, verifies the plan fields and `ACTIVE` status, saves both plan IDs on the local Premium row, and writes the product ID, monthly plan ID, and prices to `.env`. It never prints or writes the Client Secret.
 
 The app reads the plan ID from the database row. Do not manually copy a plan ID into an unrelated plan or change the Premium price in the database.
 
 ## 3. Serve only this app locally, then expose it over HTTPS
 
-PayPal cannot send webhooks to `localhost`. The current `.env` points at `http://localhost/polishedpro-v2/public`, but that path currently returns 404: XAMPP Apache serves `C:\xampp\htdocs`, while this checkout is in `D:\workspace - Copy\polishedpro-v2`. Also, tunneling port 80 would expose every site in Apache's document root. Use the XAMPP PHP development server bound to loopback so only this app is reachable through the tunnel.
+PayPal cannot send webhooks to `localhost`. Use the PHP development server bound to loopback so only this app is reachable through the tunnel; tunneling Apache's port 80 may expose other sites in its document root.
 
 Open a terminal in the project root and start the local app:
 
@@ -94,8 +97,8 @@ Save the webhook, then copy its generated **Webhook ID** into `PAYPAL_WEBHOOK_ID
 
 ## 5. Run a Sandbox checkout
 
-1. Create or use an artist account. For an immediate first-charge test, use an account whose existing artist trial has expired; the app defers first charges on the older plans during that trial. Premium has no PayPal trial and begins billing when approved.
-2. Open **Artist dashboard → Plan & billing** and choose Premium.
+1. Create or use an artist account. Premium has no PayPal trial and starts billing when approved, even if the account is still in its separate onboarding trial.
+2. Open **Artist dashboard → Plan & billing**, select Monthly or Yearly, and choose Premium.
 3. Approve using a Sandbox Personal buyer account from the PayPal Developer Dashboard's **Sandbox → Accounts** page.
 4. Confirm the subscription is active in PayPal Sandbox and that PolishedProV2 records the subscription and completed payment. The billing page shows the status, billed period, last successful payment, and payment history.
 5. Test cancellation from the artist billing page. The local access period ends immediately for a refunded/reversed sale; ordinary cancellation retains already-paid access through the period end.
@@ -104,13 +107,13 @@ The browser approval callback alone never activates a plan. PHP reads the subscr
 
 ## Sandbox test checklist
 
-- Approve a new PHP 149 monthly subscription; verify a completed payment row and active artist plan.
+- Approve a PHP 149 monthly subscription and a PHP 1,490 yearly subscription; verify each completed payment and active Premium plan.
 - Verify PHP 148, USD, wrong plan IDs, and a subscription belonging to another signed-in artist are rejected.
 - Submit the same successful webhook event twice; confirm there is one ledger transaction and no duplicate period extension.
 - Send a webhook without a valid PayPal signature; confirm it is rejected and leaves the database unchanged.
 - Trigger a failed payment, suspension, cancellation, and expiration in Sandbox; confirm pending subscriptions never grant access and a paying account retains only its verified paid-through period.
 - Refund or reverse a test sale; confirm the payment status changes, access is revoked, and PayPal billing is cancelled.
-- Let a Sandbox monthly billing period renew, then verify the renewal transaction and next billing date. The fixed plan remains monthly; do not alter its frequency to accelerate tests.
+- Verify the monthly and yearly Sandbox plans use their intended billing intervals and prices. Do not alter PayPal plan prices or frequencies to accelerate tests.
 - Confirm a free customer account has no artist-plan entitlements and administrator access is unchanged.
 
 The Sandbox account must support PayPal Subscriptions. PayPal's current Subscriptions integration documentation notes eligibility/onboarding restrictions for some accounts. If the API returns `NOT_AUTHORIZED` or the button cannot create a subscription, check the merchant Sandbox account's Subscriptions access with PayPal before changing the application.

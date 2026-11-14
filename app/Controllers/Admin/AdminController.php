@@ -300,8 +300,8 @@ final class AdminController extends Controller
             $this->failure('Pick an artist account.', '/admin/subscriptions');
         }
 
-        if ($plan === null) {
-            $this->failure('Pick a valid plan.', '/admin/subscriptions');
+        if ($plan === null || (int) ($plan['is_active'] ?? 0) !== 1) {
+            $this->failure('Pick the active Premium plan.', '/admin/subscriptions');
         }
 
         $subscriptionId = SubscriptionService::grantManual($userId, $planId, $months);
@@ -339,8 +339,12 @@ final class AdminController extends Controller
     {
         $planId = $request->intParam('id');
 
-        if (Plan::find($planId) === null) {
+        $plan = Plan::find($planId);
+        if ($plan === null) {
             $this->failure('That plan could not be found.', '/admin/plans');
+        }
+        if (($plan['code'] ?? '') !== 'premium') {
+            $this->failure('Archived plans are retained for existing subscription records and cannot be changed.', '/admin/plans');
         }
 
         $data = $this->validate($request, [

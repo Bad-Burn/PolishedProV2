@@ -53,7 +53,7 @@ try {
 
 $created = 0;
 
-foreach (Plan::all(false) as $plan) {
+foreach (Plan::all(true) as $plan) {
     if (!Plan::isPaid($plan)) {
         cli_line('Skipping ' . $plan['name'] . ' (free tier)');
         continue;

@@ -22,6 +22,21 @@ test('public help page renders with its stylesheet and security headers', async 
   expect(csp).toContain("frame-ancestors 'none'");
 });
 
+test('pricing offers only Premium and shows the yearly price', async ({ page }) => {
+  const response = await page.goto('/pricing?cycle=yearly');
+
+  expect(response.status()).toBe(200);
+  await expect(page.locator('.plan__name')).toHaveCount(1);
+  await expect(page.locator('.plan__name')).toHaveText('Premium');
+  await expect(page.locator('.plan__amount')).toContainText('1,490');
+  await expect(page.getByRole('link', { name: 'Yearly' })).toHaveClass(/is-active/);
+
+  await page.getByRole('link', { name: 'Monthly' }).click();
+  await expect(page.locator('.plan__amount')).toContainText('149');
+  await page.getByRole('link', { name: 'Yearly' }).click();
+  await expect(page.locator('.plan__amount')).toContainText('1,490');
+});
+
 test('sign-in form renders a CSRF token', async ({ page }) => {
   const response = await page.goto('/login');
 

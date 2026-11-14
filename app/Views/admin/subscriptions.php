@@ -141,6 +141,7 @@ end_section();
                 <label class="field__label" for="grant_plan">Plan</label>
                 <select class="select" id="grant_plan" name="plan_id" required>
                     <?php foreach ($plans as $plan): ?>
+                        <?php if ((int) ($plan['is_active'] ?? 0) !== 1) { continue; } ?>
                         <option value="<?= (int) $plan['id'] ?>"><?= e($plan['name']) ?></option>
                     <?php endforeach; ?>
                 </select>

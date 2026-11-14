@@ -33,7 +33,7 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
 <header class="dash__head">
     <div>
         <h1>Plan &amp; billing</h1>
-        <p>What your plan covers, and how to change it.</p>
+        <p>What Premium covers, and whether monthly or yearly billing suits you.</p>
     </div>
 </header>
 
@@ -178,8 +178,8 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
 <section class="mb-8">
     <div class="section-head" style="margin-bottom: var(--sp-5);">
         <div>
-            <h2 class="heading-lg">Change plan</h2>
-            <p>Upgrade or downgrade whenever. No lock-in.</p>
+            <h2 class="heading-lg">Choose your billing cycle</h2>
+            <p>One Premium plan, billed monthly or yearly. Cancel whenever.</p>
         </div>
 
         <div class="billing-switch">
@@ -190,7 +190,7 @@ $endingSoon   = !empty($current['cancel_at_period_end']);
         </div>
     </div>
 
-    <div class="plan-grid">
+    <div class="plan-grid<?= count($plans) === 1 ? ' plan-grid--single' : '' ?>">
         <?php foreach ($plans as $planOption): ?>
             <?= view_partial('plan-card', [
                 'plan'          => $planOption,

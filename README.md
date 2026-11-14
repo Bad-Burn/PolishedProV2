@@ -87,8 +87,8 @@ screen has something real in it. All demo accounts share one password:
 
 | Role | Email | Password |
 |---|---|---|
-| Artist (Signature plan) | `mariel@polishedpro.test` | `PolishedDemo!2026` |
-| Artist (Studio plan) | `jonas@polishedpro.test` | `PolishedDemo!2026` |
+| Demo artist (legacy Signature subscription) | `mariel@polishedpro.test` | `PolishedDemo!2026` |
+| Demo artist (legacy Studio subscription) | `jonas@polishedpro.test` | `PolishedDemo!2026` |
 | Artist (trial, no plan yet) | `paolo@polishedpro.test` | `PolishedDemo!2026` |
 | Client | `bea@example.test` | `PolishedDemo!2026` |
 
@@ -128,22 +128,20 @@ Even a badly configured server cannot serve them.
 
 ## Artist subscriptions
 
-Subscription only — there is no free tier. Every new artist starts a **14-day trial**
-granting the full Studio feature set, then subscribes or goes quiet. Plans are seeded
-and editable from **Admin → Plans**:
+Subscription only - there is no free tier after the trial. Every new artist starts a 14-day trial with Premium features. Premium is the only plan offered, at PHP 149/month or PHP 1,490/year. Studio and Signature are hidden from new sales; existing subscriptions keep their agreed terms and records.
 
-| | Trial | Studio | Signature |
-|---|---|---|---|
-| Price | Free, 14 days | ₱349/mo | ₱749/mo |
-| Active services | 15 | 15 | Unlimited |
-| Portfolio photos | 30 | 30 | Unlimited |
-| Search placement | Standard | Priority | Top |
-| Analytics | Yes | Yes | Yes |
-| Instant booking | Yes | Yes | Yes |
-| Commission on bookings | **0%** | **0%** | **0%** |
+| Feature | Premium |
+|---|---|
+| Monthly price | PHP 149/month |
+| Yearly price | PHP 1,490/year |
+| Active services | 3 |
+| Portfolio photos | 6 |
+| Search placement | Standard |
+| Analytics | Not included |
+| Instant booking | Not included |
+| Commission on bookings | **0%** |
 
-Trial length and which plan it mirrors are set in `config/app.php` under
-`subscription.trial_days` / `subscription.trial_plan_code`.
+Trial length is set in `config/app.php` under `subscription.trial_days`.
 
 ### What "lapsed" means
 

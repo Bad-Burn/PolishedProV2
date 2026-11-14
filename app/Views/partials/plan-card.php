@@ -28,19 +28,15 @@ $isPremium = ($plan['code'] ?? '') === 'premium';
 $isCurrent = $currentPlanId === (int) ($plan['id'] ?? -1);
 $saving    = Plan::yearlySavingPercent($plan);
 
-// The middle tier is the honest recommendation for a working artist.
-$isRecommended = ($plan['code'] ?? '') === 'studio' && !$isCurrent;
 ?>
-<article class="plan <?= $isCurrent ? 'plan--current' : ($isRecommended ? 'plan--recommended' : '') ?>">
+<article class="plan <?= $isCurrent ? 'plan--current' : '' ?>">
     <?php if ($isCurrent): ?>
         <span class="plan__flag">Your plan</span>
-    <?php elseif ($isRecommended): ?>
-        <span class="plan__flag">Most popular</span>
     <?php endif; ?>
 
     <h3 class="plan__name"><?= e($plan['name']) ?></h3>
     <p class="plan__tagline">
-        <?php if ($isPremium): ?>PolishedProV2 Monthly Premium &middot; <?php endif; ?>
+        <?php if ($isPremium): ?>PolishedProV2 Premium &middot; <?php endif; ?>
         <?= e($plan['tagline'] ?? '') ?>
     </p>
 
@@ -82,6 +78,17 @@ $isRecommended = ($plan['code'] ?? '') === 'studio' && !$isCurrent;
             </div>
         <?php elseif ($isPremium && $cycle === 'monthly' && !empty($paypalPremium['sandbox_only'])): ?>
             <button class="btn btn--secondary btn--block" type="button" disabled>Sandbox checkout not configured</button>
+        <?php elseif ($isPremium && $cycle === 'yearly' && !empty($paypalPremium['yearly_ready'])): ?>
+            <form method="post" action="<?= e(url('/artist/subscription/checkout')) ?>" data-once>
+                <?= csrf_field() ?>
+                <input type="hidden" name="plan_id" value="<?= (int) $plan['id'] ?>">
+                <input type="hidden" name="cycle" value="yearly">
+                <button class="btn btn--primary btn--block" type="submit" data-busy-text="Opening PayPal…">
+                    Continue with PayPal
+                </button>
+            </form>
+        <?php elseif ($isPremium && $cycle === 'yearly' && !empty($paypalPremium['sandbox_only'])): ?>
+            <button class="btn btn--secondary btn--block" type="button" disabled>Yearly Sandbox checkout not configured</button>
         <?php elseif (!$paypalReady): ?>
             <button class="btn btn--secondary btn--block" type="button" disabled>Payments not configured</button>
         <?php else: ?>
@@ -89,7 +96,7 @@ $isRecommended = ($plan['code'] ?? '') === 'studio' && !$isCurrent;
                 <?= csrf_field() ?>
                 <input type="hidden" name="plan_id" value="<?= (int) $plan['id'] ?>">
                 <input type="hidden" name="cycle" value="<?= e($cycle) ?>">
-                <button class="btn <?= $isRecommended ? 'btn--primary' : 'btn--secondary' ?> btn--block"
+                <button class="btn btn--primary btn--block"
                         type="submit" data-busy-text="Opening PayPal…">
                     Choose <?= e($plan['name']) ?>
                 </button>

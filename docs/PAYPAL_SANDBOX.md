@@ -53,11 +53,13 @@ Open a terminal in the project root and start the local app:
 C:\xampp\php\php.exe -S 127.0.0.1:8765 -t public bin/router.php
 ```
 
-Confirm `http://127.0.0.1:8765/help` loads. Keep this terminal open. After approval to expose the app, open a second terminal and run:
+Confirm `http://127.0.0.1:8765/help` loads. Keep this terminal open. Open a second PowerShell terminal in the project root and run:
 
 ```powershell
-ngrok http 8765
+.\start-ngrok.ps1
 ```
+
+The launcher checks that the local app is responding, reuses an existing ngrok tunnel to port `8765`, or starts one if needed. Use `-CheckOnly` to check readiness without starting a tunnel. If PowerShell blocks the script, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\start-ngrok.ps1` from the project root.
 
 Use the HTTPS forwarding hostname ngrok displays. The public app is at its root, with no `/polishedpro-v2/public` suffix. Update the local `.env`:
 

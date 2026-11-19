@@ -37,6 +37,10 @@ XAMPP ships with everything needed.
 
 ---
 
+## Presentation on GitHub
+
+Use [GitHub Codespaces](docs/CODESPACES_PRESENTATION.md) to present the full PHP app with demo accounts and a dedicated database.
+
 ## Quick start
 
 ```bash

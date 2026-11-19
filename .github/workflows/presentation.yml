@@ -1,0 +1,33 @@
+name: Presentation runtime
+
+on:
+  push:
+    branches: [presentation-full]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the presentation containers
+        run: docker compose -f .devcontainer/compose.yml up --build --detach --wait
+      - name: Start the full app
+        run: |
+          docker compose -f .devcontainer/compose.yml exec -T --user "$(id -u):$(id -g)" app bash .devcontainer/start-presentation.sh
+      - name: Check the PHP site and administrator setup
+        run: |
+          docker compose -f .devcontainer/compose.yml exec -T --user "$(id -u):$(id -g)" app bash -euc '
+            curl -fsS http://127.0.0.1:8765/artists -o /tmp/polishedpro-artists.html
+            grep -q "Bautista Barbers" /tmp/polishedpro-artists.html
+            curl -fsS http://127.0.0.1:8765/login -o /tmp/polishedpro-login.html
+            grep -q "Welcome back" /tmp/polishedpro-login.html
+            test -s storage/codespaces/admin-password
+            bash .devcontainer/start-presentation.sh
+          '
+      - name: Show the application log on failure
+        if: failure()
+        run: if [ -f storage/codespaces/server.log ]; then tail -n 50 storage/codespaces/server.log; fi

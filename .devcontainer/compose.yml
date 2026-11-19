@@ -1,0 +1,40 @@
+services:
+  app:
+    build: .
+    command: ["sleep", "infinity"]
+    volumes:
+      - ..:/workspaces/PolishedProV2
+    working_dir: /workspaces/PolishedProV2
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "false"
+      TRUSTED_PROXY: "false"
+      MAIL_DRIVER: log
+      PAYPAL_MODE: sandbox
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: polishedpro_presentation
+      DB_USER: polishedpro_demo
+      DB_PASSWORD: polishedpro_demo_local
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+      MARIADB_DATABASE: polishedpro_presentation
+      MARIADB_USER: polishedpro_demo
+      MARIADB_PASSWORD: polishedpro_demo_local
+    volumes:
+      - presentation-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+volumes:
+  presentation-data:

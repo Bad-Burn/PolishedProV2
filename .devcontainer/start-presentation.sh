@@ -16,7 +16,7 @@ exec 9>"$runtime/start.lock"
 flock 9
 
 local_url=http://127.0.0.1:8765
-if curl --max-time 2 --fail --silent "$local_url/help" >/dev/null; then
+if curl --max-time 2 --fail --silent "$local_url/" >/dev/null; then
     echo 'PolishedPro is already running on port 8765.'
     exit 0
 fi
@@ -39,7 +39,7 @@ php .devcontainer/presentation-admin.php
 nohup php -S 0.0.0.0:8765 -t public bin/router.php >"$runtime/server.log" 2>&1 </dev/null 9>&- &
 server=$!
 for attempt in {1..30}; do
-    if curl --max-time 2 --fail --silent "$local_url/help" >/dev/null; then
+    if curl --max-time 2 --fail --silent "$local_url/" >/dev/null; then
         printf 'PolishedPro is ready at %s\n' "$APP_URL"
         exit 0
     fi

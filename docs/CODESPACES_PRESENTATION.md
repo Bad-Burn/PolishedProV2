@@ -18,3 +18,15 @@ To walk through a manual booking, sign in as the client and choose a service fro
 Premium pricing and billing screens are available. Online checkout requires separate PayPal Sandbox credentials and a reachable Sandbox webhook. The demo can show an administrator granting a plan to an artist from **Subscriptions**. Outgoing emails are recorded in `storage/logs/mail.log`.
 
 The app starts automatically on creation and restart. If you need to start it again in the Codespace, run `bash .devcontainer/start-presentation.sh`. Demo records persist across stops and starts in the Codespace’s database volume.
+
+## If the forwarded page returns 502
+
+From the Codespace terminal, run this check.
+
+```bash
+curl -sS --max-time 5 -o /dev/null -w 'PolishedPro HTTP %{http_code}\n' http://127.0.0.1:8765/
+```
+
+- **HTTP 200** means PHP is serving the home page. In **Ports**, right-click **PolishedPro (8765)**, set **Change Port Protocol → HTTP**, and reopen the forwarded address. The browser URL still uses HTTPS.
+- **HTTP 000** means the app did not answer on the local port. Run `bash .devcontainer/start-presentation.sh` in the Codespace terminal and reopen the forward after the readiness message.
+- **HTTP 500** means the app accepted the request and hit an error. Check `storage/codespaces/server.log` and `storage/logs/app.log` in the Codespace.

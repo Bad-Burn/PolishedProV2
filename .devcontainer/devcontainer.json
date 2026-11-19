@@ -8,7 +8,8 @@
   "portsAttributes": {
     "8765": {
       "label": "PolishedPro",
-      "onAutoForward": "openBrowser"
+      "protocol": "http",
+      "onAutoForward": "notify"
     }
   },
   "otherPortsAttributes": {

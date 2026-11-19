@@ -7,8 +7,8 @@
   <meta name="description" content="A presentation demo of the PolishedPro appointment booking experience.">
   <title>PolishedPro | Presentation demo</title>
   <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="demo.css">
-  <script src="demo.js" defer></script>
+  <link rel="stylesheet" href="demo.css?v=2">
+  <script src="demo.js?v=2" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -18,17 +18,14 @@
       <nav class="public-nav" aria-label="Public pages">
         <a href="#artists">Browse artists</a>
         <a href="#pricing">Pricing</a>
+        <span class="account-nav" id="account-nav"></span>
       </nav>
     </div>
   </header>
   <div class="demo-bar">
     <div class="wrap demo-nav">
       <p class="demo-label">Presentation demo <span>·</span> Sample data</p>
-      <nav class="roles" aria-label="Demo roles">
-        <a href="#client">Client</a>
-        <a href="#artist">Artist</a>
-        <a href="#admin">Administrator</a>
-      </nav>
+      <p class="demo-account" id="demo-account" hidden></p>
       <button type="button" class="reset" data-action="reset">Reset demo</button>
     </div>
   </div>

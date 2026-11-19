@@ -29,6 +29,25 @@ const artists = [
     ],
   },
 ];
+const clients = [
+  { id: 'bea', role: 'client', name: 'Bea Villanueva' },
+  { id: 'sam', role: 'client', name: 'Sam Ocampo' },
+];
+const accounts = [
+  ...clients,
+  ...artists.map(artist => ({ id: artist.id, role: 'artist', name: artist.name })),
+  { id: 'administrator', role: 'admin', name: 'Demo Administrator' },
+];
+const roles = {
+  client: { name: 'Client', home: 'client', link: 'My bookings', description: 'Request an appointment and track its status.' },
+  artist: { name: 'Artist', home: 'artist', link: 'Artist dashboard', description: 'Manage your booking requests and Premium plan.' },
+  admin: { name: 'Administrator', home: 'admin', link: 'Admin console', description: 'Look up bookings across the platform.' },
+};
+const requiredRoles = { client: 'client', artist: 'artist', billing: 'artist', checkout: 'artist', 'cancel-plan': 'artist', admin: 'admin' };
+const storageKey = 'polishedpro-presentation-v2';
+const previousStorageKey = 'polishedpro-presentation-v1';
+const sessionKey = 'polishedpro-demo-account';
+
 const timeSlots = ['10:00 AM', '12:00 PM', '2:00 PM', '4:00 PM'];
 const cycles = {
   monthly: { amount: 149, label: 'Monthly', period: 'month' },
@@ -38,7 +57,6 @@ const timeZone = 'Asia/Manila';
 const currency = new Intl.NumberFormat('en-PH', {
   style: 'currency', currency: 'PHP', maximumFractionDigits: 0, minimumFractionDigits: 0,
 });
-const storageKey = 'polishedpro-presentation-v1';
 const main = document.querySelector('main');
 const htmlEscapes = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => htmlEscapes[char]);
@@ -68,17 +86,23 @@ function newDemo() {
   return {
     trialEnd: dayKey(14),
     bookings: [{
-      reference: 'PP-DEMO-001', artistId: 'mariel', serviceId: 'pedicure',
+      reference: 'PP-DEMO-001', clientId: 'bea', artistId: 'mariel', serviceId: 'pedicure',
       date: dayKey(2), time: '10:00 AM', status: 'confirmed',
     }],
-    payment: null,
+    payments: {},
   };
 }
 
 function loadDemo() {
   try {
-    const data = JSON.parse(localStorage.getItem(storageKey));
-    if (data && Array.isArray(data.bookings) && data.trialEnd) return data;
+    const data = JSON.parse(localStorage.getItem(storageKey) ?? localStorage.getItem(previousStorageKey));
+    if (data && Array.isArray(data.bookings) && data.trialEnd) {
+      return {
+        trialEnd: data.trialEnd,
+        bookings: data.bookings.map(booking => ({ clientId: 'bea', ...booking })),
+        payments: data.payments ?? (data.payment ? { mariel: data.payment } : {}),
+      };
+    }
   } catch {
     // The presentation can continue with in-memory state if storage is unavailable.
   }
@@ -89,25 +113,107 @@ function saveDemo() {
   try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* In-memory fallback. */ }
 }
 
+function loadAccount() {
+  try {
+    return accounts.find(account => account.id === sessionStorage.getItem(sessionKey)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setAccount(account) {
+  currentAccount = account;
+  try {
+    if (account) sessionStorage.setItem(sessionKey, account.id);
+    else sessionStorage.removeItem(sessionKey);
+  } catch {
+    // The account remains available in this tab until reload.
+  }
+}
+
+function artistPayment() {
+  return currentAccount?.role === 'artist' ? state.payments[currentAccount.id] : undefined;
+}
+
 let state = loadDemo();
+let currentAccount = loadAccount();
+let requestedRoute = '';
 let search = { q: '', category: '' };
 let adminQuery = '';
 let selected = null;
-let cycle = state.payment?.cycle ?? 'monthly';
+let cycle = artistPayment()?.cycle ?? 'monthly';
 let notice = '';
-let verificationTimer;
+const verificationTimers = new Map();
 
 function route() {
   return (location.hash.slice(1) || 'home').split('/');
 }
 
-function go(destination) {
+function go(destination, replace = false) {
   if (location.hash === '#' + destination) render(true);
+  else if (replace) location.replace('#' + destination);
   else location.hash = destination;
 }
 
 function currentArtist(id) {
   return artists.find(artist => artist.id === id);
+}
+
+function clientName(id) {
+  return clients.find(client => client.id === id)?.name ?? 'Demo client';
+}
+
+function renderAccountNavigation(screen) {
+  const navigation = document.querySelector('#account-nav');
+  const label = document.querySelector('#demo-account');
+  label.hidden = !currentAccount;
+  if (!currentAccount) {
+    navigation.innerHTML = '<a class="button primary account-button" href="#sign-in">Sign in</a>';
+    label.textContent = '';
+    return;
+  }
+  const role = roles[currentAccount.role];
+  const current = screen === role.home ? ' aria-current="page"' : '';
+  navigation.innerHTML = `<a href="#${role.home}"${current}>${role.link}</a>
+    <button type="button" class="button ghost account-button" data-action="sign-out">Sign out</button>`;
+  label.textContent = currentAccount.name + ' · ' + role.name;
+}
+
+function roleFor(screen) {
+  return Object.hasOwn(requiredRoles, screen) ? requiredRoles[screen] : null;
+}
+
+function requestedRoleFor(destination) {
+  return destination.startsWith('book/') ? 'client' : roleFor(destination);
+}
+
+function signIn() {
+  const requestedRole = requestedRoleFor(requestedRoute);
+  page('Sign in', `${heading('Welcome back', 'Choose a sample account to sign in for the presentation.')}
+    <div class="grid grid-3">
+      ${Object.entries(roles).map(([id, role]) => {
+        const choices = accounts.filter(account => account.role === id);
+        return `<form class="card stack sign-in-card" data-form="sign-in">
+          <h2>${role.name}</h2>
+          <p class="muted">${role.description}</p>
+          ${choices.length === 1
+            ? `<p class="account-choice">${choices[0].name}</p><input type="hidden" name="account" value="${choices[0].id}">`
+            : `<label>Sample account<select name="account">
+                ${choices.map(account => `<option value="${account.id}">${account.name}</option>`).join('')}
+              </select></label>`}
+          <button class="button ${requestedRole && requestedRole !== id ? '' : 'primary'}">Sign in as ${role.name.toLowerCase()}</button>
+        </form>`;
+      }).join('')}
+    </div>`);
+}
+
+function restricted(role) {
+  const ownRole = roles[currentAccount.role];
+  page('Account access', `${heading('Account access', 'This page is available to ' + roles[role].name.toLowerCase() + ' accounts.')}
+    <div class="actions">
+      <a class="button primary" href="#${ownRole.home}">${ownRole.link}</a>
+      <button type="button" class="button" data-action="sign-out">Sign out</button>
+    </div>`);
 }
 
 function heading(title, subtitle) {
@@ -227,7 +333,11 @@ function book(artist, service) {
         <div><dt>Service price</dt><dd>${currency.format(service.price)}</dd></div>
       </dl>
       <p class="muted small">Clients pay their artist directly.</p>
-      <button type="button" class="button primary" data-action="request" ${selected.time ? '' : 'disabled'}>Request this slot</button>
+      ${currentAccount?.role === 'client'
+        ? `<button type="button" class="button primary" data-action="request" ${selected.time ? '' : 'disabled'}>Request this slot</button>`
+        : currentAccount
+          ? '<p class="muted small">Sign in with a client account to make a booking request.</p>'
+          : '<button type="button" class="button primary" data-action="sign-in-to-book">Sign in to request</button>'}
     </aside>
   </div>`);
 }
@@ -239,12 +349,16 @@ function bookingStatus(booking) {
 }
 
 function bookingList(artistView) {
-  const list = state.bookings.slice().reverse().map(booking => {
+  const bookings = state.bookings.filter(booking => artistView
+    ? booking.artistId === currentAccount.id
+    : booking.clientId === currentAccount.id);
+  if (bookings.length === 0) return '<p class="muted">No bookings yet.</p>';
+  const list = bookings.reverse().map(booking => {
     const artist = currentArtist(booking.artistId);
     const service = artist.services.find(item => item.id === booking.serviceId);
     return `<li class="row between">
       <div><strong>${service.name}</strong>
-        <p class="muted small">${artist.name} · ${fullDate.format(dateOf(booking.date))} · ${booking.time}</p>
+        <p class="muted small">${artistView ? clientName(booking.clientId) : artist.name} · ${fullDate.format(dateOf(booking.date))} · ${booking.time}</p>
         <p class="muted small reference">${escapeHtml(booking.reference)}</p>
       </div>
       <div class="actions">${bookingStatus(booking)}
@@ -257,7 +371,7 @@ function bookingList(artistView) {
 }
 
 function client() {
-  page('My bookings', `${heading('My bookings', 'See your appointment requests and confirmed bookings.')}
+  page('My bookings', `${heading('My bookings', currentAccount.name + ' · Appointment requests and confirmations')}
     ${notice ? `<p class="banner ok section-head" role="status">${escapeHtml(notice)}</p>` : ''}
     <section class="card stack">
       <div class="row between"><h2>Upcoming appointments</h2><a class="button" href="#artists">Find an artist</a></div>
@@ -266,7 +380,7 @@ function client() {
 }
 
 function artistDashboard() {
-  page('Artist bookings', `${heading('Artist bookings', 'Open the request queue to confirm a client’s appointment.')}
+  page('Artist bookings', `${heading('Artist bookings', currentAccount.name + ' · Your appointment requests')}
     <div class="stack">
       <div class="actions"><a class="button primary" href="#billing">Plan &amp; billing</a></div>
       <section class="card stack"><h2>Booking queue</h2>${bookingList(true)}</section>
@@ -282,9 +396,9 @@ function admin() {
         <button class="button primary">Find booking</button>
       </form>
       <div class="table-scroll"><table>
-        <thead><tr><th scope="col">Reference</th><th scope="col">Artist</th><th scope="col">Appointment</th><th scope="col">Status</th></tr></thead>
+        <thead><tr><th scope="col">Reference</th><th scope="col">Client</th><th scope="col">Artist</th><th scope="col">Appointment</th><th scope="col">Status</th></tr></thead>
         <tbody>${bookings.map(booking => `<tr>
-          <td>${escapeHtml(booking.reference)}</td><td>${currentArtist(booking.artistId).name}</td>
+          <td>${escapeHtml(booking.reference)}</td><td>${clientName(booking.clientId)}</td><td>${currentArtist(booking.artistId).name}</td>
           <td>${fullDate.format(dateOf(booking.date))} · ${booking.time}</td><td>${bookingStatus(booking)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
@@ -300,7 +414,8 @@ function billingPicker() {
 
 function planCard(publicPage) {
   const term = cycles[cycle];
-  const paid = ['active', 'ending'].includes(state.payment?.status);
+  const payment = artistPayment();
+  const paid = ['active', 'ending'].includes(payment?.status);
   return `<section class="card stack">
     <div class="row between"><h2>Premium</h2>${cycle === 'yearly' ? '<span class="chip chip-ok">Save 17%</span>' : ''}</div>
     <p class="price">${currency.format(term.amount)} <small>/ ${term.period}</small></p>
@@ -310,7 +425,7 @@ function planCard(publicPage) {
     </ul>
     ${publicPage ? '<a class="button primary" href="#billing">Open demo billing</a>'
       : paid ? '<button type="button" class="button" disabled>Current plan</button>'
-      : state.payment?.status === 'pending' ? '<button type="button" class="button" disabled>Confirming payment…</button>'
+      : payment?.status === 'pending' ? '<button type="button" class="button" disabled>Confirming payment…</button>'
       : '<a class="button primary" href="#checkout">Continue with PayPal</a>'}
   </section>`;
 }
@@ -325,7 +440,7 @@ function pricing() {
 }
 
 function billing() {
-  const payment = state.payment;
+  const payment = artistPayment();
   const paid = ['active', 'ending'].includes(payment?.status);
   const trial = dayKey() <= state.trialEnd;
   const label = paid ? 'Premium' : trial ? 'Premium trial' : 'No active plan';
@@ -357,7 +472,7 @@ function billing() {
 }
 
 function checkout() {
-  if (state.payment) return billing();
+  if (artistPayment()) return billing();
   const term = cycles[cycle];
   page('PayPal checkout simulation', `<section class="card checkout stack">
     <p class="eyebrow">PayPal checkout simulation</p>
@@ -370,39 +485,52 @@ function checkout() {
 }
 
 function cancelPlan() {
-  if (state.payment?.status !== 'active') return billing();
+  const payment = artistPayment();
+  if (payment?.status !== 'active') return billing();
   page('Cancel renewal', `<section class="card checkout stack">
     <h1 class="section-title">Cancel renewal?</h1>
-    <p>You keep Premium access through ${fullDate.format(dateOf(state.payment.ends))}.</p>
+    <p>You keep Premium access through ${fullDate.format(dateOf(payment.ends))}.</p>
     <div class="actions"><button type="button" class="button primary" data-action="cancel-plan">Cancel renewal</button><a class="button" href="#billing">Back to billing</a></div>
   </section>`);
 }
 
-function verifyPayment() {
-  if (state.payment?.status !== 'pending') return;
-  state.payment.status = 'active';
-  saveDemo();
-  if (route()[0] === 'billing') {
-    notice = 'Simulated payment confirmed. Premium is active.';
-    render();
-  }
+function queueVerification(artistId) {
+  verificationTimers.set(artistId, setTimeout(() => {
+    verificationTimers.delete(artistId);
+    const payment = state.payments[artistId];
+    if (payment?.status !== 'pending') return;
+    payment.status = 'active';
+    saveDemo();
+    if (currentAccount?.id === artistId && route()[0] === 'billing') {
+      notice = 'Simulated payment confirmed. Premium is active.';
+      render();
+    }
+  }, 1700));
 }
 
 function render(navigate = false) {
   const [screen, artistId, serviceId] = route();
+  const expectedRole = roleFor(screen);
+  if (expectedRole && !currentAccount) {
+    requestedRoute = screen;
+    go('sign-in', true);
+    return;
+  }
+  if (screen === 'sign-in' && currentAccount) {
+    go(roles[currentAccount.role].home, true);
+    return;
+  }
   const artist = currentArtist(artistId);
   const service = artist?.services.find(item => item.id === serviceId);
   const screens = {
     home, artists: browse, pricing, client, artist: artistDashboard, admin, billing, checkout, 'cancel-plan': cancelPlan,
+    'sign-in': signIn,
     profile: () => artist ? profile(artist) : browse(),
     book: () => service ? book(artist, service) : browse(),
   };
-  (Object.hasOwn(screens, screen) ? screens[screen] : home)();
-  const role = ['billing', 'checkout', 'cancel-plan'].includes(screen) ? 'artist' : screen;
-  for (const link of document.querySelectorAll('.roles a')) {
-    if (link.hash === '#' + role) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
-  }
+  if (expectedRole && currentAccount.role !== expectedRole) restricted(expectedRole);
+  else (Object.hasOwn(screens, screen) ? screens[screen] : home)();
+  renderAccountNavigation(screen);
   if (navigate) {
     window.scrollTo(0, 0);
     main.focus({ preventScroll: true });
@@ -420,9 +548,24 @@ document.addEventListener('click', event => {
   if (!button) return;
   const { action, value } = button.dataset;
   switch (action) {
+    case 'sign-in-to-book':
+      requestedRoute = route().join('/');
+      go('sign-in');
+      return;
+    case 'sign-out':
+      setAccount(null);
+      requestedRoute = '';
+      selected = null;
+      adminQuery = '';
+      cycle = 'monthly';
+      go('sign-in', true);
+      return;
     case 'reset':
-      if (!window.confirm('Reset all bookings and payments in this demo?')) return;
-      clearTimeout(verificationTimer);
+      if (!window.confirm('Reset demo bookings and payments and sign out?')) return;
+      for (const timer of verificationTimers.values()) clearTimeout(timer);
+      verificationTimers.clear();
+      setAccount(null);
+      requestedRoute = '';
       state = newDemo();
       saveDemo();
       search = { q: '', category: '' };
@@ -443,9 +586,9 @@ document.addEventListener('click', event => {
       break;
     case 'request': {
       const [, artistId, serviceId] = route();
-      if (!selected?.time || slotTaken(artistId, selected.date, selected.time)) return;
+      if (currentAccount?.role !== 'client' || !selected?.time || slotTaken(artistId, selected.date, selected.time)) return;
       const reference = 'PP-DEMO-' + String(state.bookings.length + 1).padStart(3, '0');
-      state.bookings.push({ reference, artistId, serviceId, date: selected.date, time: selected.time, status: 'pending' });
+      state.bookings.push({ reference, clientId: currentAccount.id, artistId, serviceId, date: selected.date, time: selected.time, status: 'pending' });
       selected = null;
       saveDemo();
       notice = 'Booking request sent. Reference ' + reference + '.';
@@ -453,8 +596,8 @@ document.addEventListener('click', event => {
       return;
     }
     case 'confirm': {
-      const booking = state.bookings.find(item => item.reference === value && item.status === 'pending');
-      if (!booking) return;
+      const booking = state.bookings.find(item => item.reference === value && item.status === 'pending' && item.artistId === currentAccount?.id);
+      if (!booking || currentAccount?.role !== 'artist') return;
       booking.status = 'confirmed';
       saveDemo();
       break;
@@ -463,10 +606,10 @@ document.addEventListener('click', event => {
       if (Object.hasOwn(cycles, value)) cycle = value;
       break;
     case 'pay':
-      if (state.payment) return;
-      state.payment = { cycle, status: 'pending', paidOn: dayKey(), ends: paidThrough(dayKey(), cycle) };
+      if (currentAccount?.role !== 'artist' || artistPayment()) return;
+      state.payments[currentAccount.id] = { cycle, status: 'pending', paidOn: dayKey(), ends: paidThrough(dayKey(), cycle) };
       saveDemo();
-      verificationTimer = setTimeout(verifyPayment, 1700);
+      queueVerification(currentAccount.id);
       go('billing');
       return;
     case 'cancel-checkout':
@@ -474,8 +617,8 @@ document.addEventListener('click', event => {
       go('billing');
       return;
     case 'cancel-plan':
-      if (state.payment?.status !== 'active') return;
-      state.payment.status = 'ending';
+      if (artistPayment()?.status !== 'active') return;
+      artistPayment().status = 'ending';
       saveDemo();
       notice = 'Renewal cancelled. Your paid access continues through the period end.';
       go('billing');
@@ -491,7 +634,16 @@ document.addEventListener('click', event => {
 main.addEventListener('submit', event => {
   event.preventDefault();
   const data = new FormData(event.target);
-  if (event.target.id === 'artist-search') {
+  if (event.target.dataset.form === 'sign-in') {
+    const account = accounts.find(candidate => candidate.id === data.get('account'));
+    if (!account) return;
+    setAccount(account);
+    cycle = artistPayment()?.cycle ?? cycle;
+    const next = requestedRoute;
+    const nextRole = requestedRoleFor(next);
+    requestedRoute = '';
+    go(nextRole === account.role ? next : roles[account.role].home, true);
+  } else if (event.target.id === 'artist-search') {
     search = { q: String(data.get('query')).trim(), category: String(data.get('category')) };
     render();
     document.querySelector('#artist-search input').focus();
@@ -503,5 +655,12 @@ main.addEventListener('submit', event => {
 });
 
 window.addEventListener('hashchange', () => render(true));
-if (state.payment?.status === 'pending') verificationTimer = setTimeout(verifyPayment, 1700);
+window.addEventListener('storage', event => {
+  if (event.key !== storageKey) return;
+  state = loadDemo();
+  render();
+});
+for (const [artistId, payment] of Object.entries(state.payments)) {
+  if (payment.status === 'pending') queueVerification(artistId);
+}
 render();
